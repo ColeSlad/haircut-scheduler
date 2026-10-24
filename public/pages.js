@@ -1,4 +1,4 @@
-import { esc, money, timeLabel, dayNames, imageEvents, $, $$ } from './shared.js?v=4';
+import { esc, money, timeLabel, dayNames, imageEvents, $, $$ } from './shared.js?v=5';
 
 const photos = [
   'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?auto=format&fit=crop&w=800&q=85',

@@ -222,6 +222,8 @@ dialog p { font-size: 14px; }
 .login-card > .fine-print { margin-top: 20px; }
 .setup-note { padding: 20px; border: 1px solid var(--line); border-radius: 4px; font-size: 14px; }
 .setup-note p { margin-block: 12px 20px; }
+.login-card > .setup-note { margin-top: 20px; }
+.login-card > .text-link { margin-top: 16px; }
 code { font-family: monospace; background: var(--soft); padding: 2px 4px; font-size: 13px; }
 .admin-intro { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding-block: 40px 32px; }
 .admin-intro h1 { font-size: 32px; }

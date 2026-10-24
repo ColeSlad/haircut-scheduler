@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore, publicData } from '../server/store.js';
 import { createBooking, availableSlots } from '../server/scheduling.js';
+import { DatabaseSync } from 'node:sqlite';
 
 test('existing service menus migrate once without changing bookings or haircut pricing', (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'haircut-migration-'));
@@ -50,4 +51,20 @@ test('TikTok videos are seeded once and admin removal survives reopening', (t) =
   db.close();
   db = openStore(file);
   assert.deepEqual(publicData(db).videos, []);
+});
+
+test('old session tables migrate without changing an existing admin account', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'haircut-auth-migration-'));
+  const file = join(directory, 'scheduler.sqlite');
+  const old = new DatabaseSync(file);
+  old.exec(`CREATE TABLE sessions (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
+    CREATE TABLE admin (id INTEGER PRIMARY KEY CHECK(id = 1), email TEXT NOT NULL, password_hash TEXT NOT NULL);`);
+  old.prepare('INSERT INTO admin VALUES (1, ?, ?)').run('existing@example.com', 'existing-password-hash');
+  old.prepare('INSERT INTO sessions VALUES (?, ?)').run('old-session-hash', Date.now() + 60000);
+  old.close();
+  const db = openStore(file);
+  t.after(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
+  assert.equal(db.prepare('SELECT password_hash FROM admin WHERE id = 1').get().password_hash, 'existing-password-hash');
+  assert.equal(db.prepare('SELECT auth_key FROM sessions').get().auth_key, '');
+  assert(db.prepare('PRAGMA table_info(sessions)').all().some((column) => column.name === 'auth_key'));
 });
