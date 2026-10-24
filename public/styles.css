@@ -217,7 +217,7 @@ dialog p { font-size: 14px; }
 .login-card { max-width: 440px; margin: 0 auto; }
 .login-card h1 { font-size: 28px; }
 .login-card > p:not(.eyebrow) { margin-block: 16px 24px; font-size: 14px; }
-.login-card form { display: flex; flex-direction: column; gap: 20px; }
+.login-card form { margin-top: 24px; display: flex; flex-direction: column; gap: 20px; }
 .summary-icon { margin-bottom: 20px; }
 .login-card > .fine-print { margin-top: 20px; }
 .setup-note { padding: 20px; border: 1px solid var(--line); border-radius: 4px; font-size: 14px; }
@@ -227,7 +227,6 @@ dialog p { font-size: 14px; }
 code { font-family: monospace; background: var(--soft); padding: 2px 4px; font-size: 13px; }
 .admin-intro { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding-block: 40px 32px; }
 .admin-intro h1 { font-size: 32px; }
-.admin-intro p:last-child { margin-top: 12px; font-size: 14px; }
 .admin-shell { padding-bottom: 48px; }
 .admin-nav { display: flex; gap: 24px; overflow-x: auto; border-bottom: 1px solid var(--line); margin-bottom: 28px; }
 .admin-nav button { padding: 12px 0; border: 0; border-bottom: 2px solid transparent; background: white; font-size: 14px; color: var(--muted); white-space: nowrap; }
