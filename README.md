@@ -18,17 +18,17 @@ Open **http://localhost:3000**. If file watching is unavailable on your system, 
 Admin SMS sign-in requires a [Twilio account and Verify service](https://www.twilio.com/docs/verify/quickstarts/node-express). In the private `.env` file, set:
 
 ```dotenv
-ADMIN_PHONE=+15551234567
+ADMIN_PHONES=+15551234567,+15557654321
 TWILIO_ACCOUNT_SID=your_account_sid
 TWILIO_AUTH_TOKEN=your_auth_token
 TWILIO_VERIFY_SERVICE_SID=your_verify_service_sid
 ```
 
-Use the admin's phone number with its country code. Configure the Verify service for SMS and restart the app after changing these values. Trial Twilio accounts require verifying the recipient number before sending codes. SMS/Verify charges are handled by Twilio; this app does not create a Twilio account or purchase a number. Never put these credentials or the real admin number in source control.
+Use one or two admin phone numbers with country codes, separated by a comma. Both admins have full access to the same single-barber calendar and management settings. Configure the Verify service for SMS and restart the app after changing these values. Trial Twilio accounts require verifying both recipient numbers before sending codes. SMS/Verify charges are handled by Twilio; this app does not create a Twilio account or purchase a number. Never put these credentials or the real admin number in source control.
 
-Only `ADMIN_PHONE` can receive an admin sign-in code. There is no public admin registration. Codes are checked by Twilio on the server, expire, and can only establish one session per challenge. The browser receives an HttpOnly challenge cookie rather than the code. Resends have a 30-second cooldown and a persistent limit of five sends per hour; verification allows at most five attempts per challenge. Twilio also enforces its own code and attempt limits.
+Only the numbers in `ADMIN_PHONES` can receive admin sign-in codes. A third number cannot be registered. The older single-number `ADMIN_PHONE` setting remains supported when `ADMIN_PHONES` is not set. There is no public admin registration. Codes are checked by Twilio on the server, expire, and can only establish one session per challenge. The browser receives an HttpOnly challenge cookie rather than the code. Resends have a 30-second cooldown and a persistent limit of five sends per hour for each admin number; verification allows at most five attempts per challenge. Twilio also enforces its own code and attempt limits.
 
-Existing email/password admin accounts remain usable through **Use existing email login** until all SMS settings are configured. Once SMS is configured, password sign-in is disabled, even if the SMS provider is temporarily unavailable. Changing the admin number or authentication method invalidates prior sessions. The legacy `npm run admin:create` command only creates/resets the temporary email/password login; it is not needed for SMS login.
+Existing email/password admin accounts remain usable through **Use existing email login** until all SMS settings are configured. Once SMS is configured, password sign-in is disabled, even if the SMS provider is temporarily unavailable. Adding the second admin preserves the first admin's sessions. Removing a number revokes that admin's sessions; the other admin stays signed in. Each admin has separate verification challenges and resend limits, and signing out affects only the current session. Changing the authentication method invalidates prior sessions. The legacy `npm run admin:create` command only creates/resets the temporary email/password login; it is not needed for SMS login.
 
 ## What’s included
 
