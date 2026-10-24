@@ -1,7 +1,7 @@
-import { $, $$, esc, arrow, imageEvents, api } from './shared.js';
-import { home, galleryPage, mountGallery } from './pages.js';
-import { mountScheduler, mountConfirmation } from './booking.js';
-import { mountAdmin } from './admin.js';
+import { $, $$, esc, arrow, imageEvents, api } from './shared.js?v=2';
+import { home, galleryPage, mountGallery } from './pages.js?v=2';
+import { mountScheduler, mountConfirmation } from './booking.js?v=2';
+import { mountAdmin } from './admin.js?v=2';
 let data;
 let routeId = 0;
 const app = $('#app');

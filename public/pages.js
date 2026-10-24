@@ -1,4 +1,4 @@
-import { esc, money, arrow, scissors, spark, smallIcon, timeLabel, dayNames, imageEvents, $, $$ } from './shared.js';
+import { esc, money, arrow, scissors, spark, smallIcon, timeLabel, dayNames, imageEvents, $, $$ } from './shared.js?v=2';
 
 const studioPhoto = 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=1400&q=85';
 const photos = [

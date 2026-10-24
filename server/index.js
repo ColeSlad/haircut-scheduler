@@ -26,7 +26,7 @@ export function appServer({ db = openStore(), origin = 'http://localhost:3000', 
       if (!path || !statSync(path, { throwIfNoEntry: false })?.isFile()) {
         res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('Page not found.');
       }
-      res.writeHead(200, { 'Content-Type': types[extname(path)] || 'application/octet-stream', 'Cache-Control': extname(path) === '.html' ? 'no-cache' : 'public, max-age=3600' });
+      res.writeHead(200, { 'Content-Type': types[extname(path)] || 'application/octet-stream', 'Cache-Control': ['.html', '.js', '.css'].includes(extname(path)) ? 'no-cache' : 'public, max-age=3600' });
       res.end(req.method === 'HEAD' ? undefined : readFileSync(path));
     } catch (error) {
       if (res.headersSent) return res.end();
