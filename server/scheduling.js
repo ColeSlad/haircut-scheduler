@@ -61,12 +61,12 @@ export function textField(value, label, max, required = true) {
   return value.trim();
 }
 export function createBooking(db, input, now = Date.now()) {
-  const name = textField(input.name, 'name', 100);
-  const email = textField(input.email, 'email address', 254).toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Enter a valid email address.');
-  const phone = textField(input.phone || '', 'phone number', 40, false);
-  if (phone && !/^[+\d\s().-]{7,40}$/.test(phone)) throw new HttpError(400, 'Enter a valid phone number.');
-  const notes = textField(input.notes || '', 'notes', 1000, false);
+  const firstName = textField(input.firstName, 'first name', 50);
+  const lastName = textField(input.lastName, 'last name', 50);
+  const name = `${firstName} ${lastName}`;
+  const phone = textField(input.phone, 'phone number', 40);
+  const digits = phone.replace(/\D/g, '');
+  if (!/^[+\d\s().-]+$/.test(phone) || digits.length < 7 || digits.length > 15) throw new HttpError(400, 'Enter a valid phone number.');
   if (!validTime(input.time)) throw new HttpError(400, 'Choose a valid time.');
   db.exec('BEGIN IMMEDIATE');
   try {
@@ -76,7 +76,7 @@ export function createBooking(db, input, now = Date.now()) {
     const id = randomUUID();
     const token = randomBytes(32).toString('base64url');
     db.prepare(`INSERT INTO bookings (id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, token_hash, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, service.id, service.name, service.duration, service.price, input.date, input.time, slot.startsAt, slot.endsAt, name, email, phone, notes, tokenHash(token), now);
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, service.id, service.name, service.duration, service.price, input.date, input.time, slot.startsAt, slot.endsAt, name, '', phone, '', tokenHash(token), now);
     db.exec('COMMIT');
     return { id, token, serviceName: service.name, duration: service.duration, price: service.price, date: input.date, time: input.time, startsAt: slot.startsAt, endsAt: slot.endsAt, name, status: 'confirmed', timezone: settings(db).timezone };
   } catch (error) { db.exec('ROLLBACK'); throw error; }

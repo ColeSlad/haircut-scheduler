@@ -45,7 +45,7 @@ function futureSlot(db) {
     const date = new Date(`${today}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + i);
     const day = date.toISOString().slice(0, 10);
     const slots = availableSlots(db, day, 'signature-cut', now);
-    if (slots.length) return { serviceId: 'signature-cut', date: day, time: slots[0].time, name: 'Sam Example', email: 'sam@example.com', notes: '' };
+    if (slots.length) return { serviceId: 'signature-cut', date: day, time: slots[0].time, firstName: 'Sam', lastName: 'Example', phone: '555-123-4567' };
   }
   throw new Error('No future test slot');
 }
@@ -94,7 +94,7 @@ test('a visitor books without an account, cannot double book, and can cancel via
   assert.equal((await request('/api/bookings', { method: 'POST', body: input })).status, 409);
   const path = `/api/booking/${booked.body.token}`;
   const view = await request(path);
-  assert.equal(view.body.name, input.name);
+  assert.equal(view.body.name, `${input.firstName} ${input.lastName}`);
   assert.equal(view.body.email, undefined);
   assert.equal(view.body.token_hash, undefined);
   assert.equal((await request('/api/booking/bad-token')).status, 404);
@@ -107,6 +107,20 @@ test('simultaneous booking requests create only one appointment', async (t) => {
   const results = await Promise.all(Array.from({ length: 8 }, () => request('/api/bookings', { method: 'POST', body: input })));
   assert.equal(results.filter((r) => r.status === 201).length, 1);
   assert.equal(results.filter((r) => r.status === 409).length, 7);
+});
+test('booking requires first name, last name, and phone without collecting email or notes', async (t) => {
+  const { db, request } = await fixture(t);
+  const input = futureSlot(db);
+  for (const field of ['firstName', 'lastName', 'phone']) {
+    const body = { ...input };
+    delete body[field];
+    assert.equal((await request('/api/bookings', { method: 'POST', body })).status, 400);
+  }
+  assert.equal((await request('/api/bookings', { method: 'POST', body: { ...input, phone: '-------' } })).status, 400);
+  const result = await request('/api/bookings', { method: 'POST', body: { ...input, firstName: ' Sam ', lastName: ' Example ', email: 'unused@example.com', notes: 'Not collected' } });
+  assert.equal(result.status, 201);
+  const saved = db.prepare('SELECT name, phone, email, notes FROM bookings').get();
+  assert.deepEqual({ ...saved }, { name: 'Sam Example', phone: input.phone, email: '', notes: '' });
 });
 test('admin can update the business, services, and availability with validation', async (t) => {
   const { db, request, login } = await fixture(t);

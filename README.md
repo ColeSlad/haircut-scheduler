@@ -21,7 +21,7 @@ The account command asks for an email and a password of at least 12 characters. 
 ## What’s included
 
 - **Landing page** (`/`): a short introduction, booking link, service list, location, and hours.
-- **Booking** (`/schedule`): choose a service, available date/time, and contact details. Prices are in USD, with payment at the appointment.
+- **Booking** (`/schedule`): choose a service, available date/time, and your first name, last name, and phone number. No email address or notes are collected. Prices are in USD, with payment at the appointment.
 - **Confirmation** (`/booking#private-token`): appointment details, a private cancellation link, and an `.ics` calendar download. The token stays in the URL fragment rather than server access logs.
 - **Gallery** (`/gallery`): photo categories, sample-image labeling, and responsive layouts.
 - **Admin** (`/admin`): appointment search and status updates, weekly hours, full days off, service/pricing edits, photo uploads, and studio details.

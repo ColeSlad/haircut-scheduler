@@ -4,7 +4,7 @@ import { openStore, settings } from '../server/store.js';
 import { availableSlots, createBooking, toTimestamp, localParts, validDate, tokenHash } from '../server/scheduling.js';
 
 const now = Date.parse('2026-10-26T12:00:00Z');
-const input = { serviceId: 'signature-cut', date: '2026-10-27', time: '09:00', name: 'Sam Example', email: 'sam@example.com', phone: '555-123-4567', notes: 'A little off the top.' };
+const input = { serviceId: 'signature-cut', date: '2026-10-27', time: '09:00', firstName: 'Sam', lastName: 'Example', phone: '555-123-4567' };
 function fixture(t) { const db = openStore(':memory:'); t.after(() => db.close()); return db; }
 
 test('a single barber offers slots within working hours and service duration', (t) => {
@@ -69,7 +69,7 @@ test('invalid calendar dates and contact fields are rejected', (t) => {
   const db = fixture(t);
   assert.equal(validDate('2026-02-30'), false);
   assert.throws(() => availableSlots(db, 'bad-date', 'signature-cut', now), { status: 400 });
-  for (const patch of [{ email: 'wrong' }, { name: '' }, { phone: 'phone' }, { time: '25:00' }, { notes: 'x'.repeat(1001) }]) assert.throws(() => createBooking(db, { ...input, ...patch }, now), { status: 400 });
+  for (const patch of [{ firstName: '' }, { lastName: '' }, { firstName: undefined }, { lastName: 'x'.repeat(51) }, { phone: undefined }, { phone: '' }, { phone: 'phone' }, { phone: '-------' }, { phone: '123456' }, { phone: '1'.repeat(16) }, { time: '25:00' }]) assert.throws(() => createBooking(db, { ...input, ...patch }, now), { status: 400 });
 });
 test('inactive services cannot be booked', (t) => {
   const db = fixture(t);
