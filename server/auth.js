@@ -14,17 +14,17 @@ export async function verifyPassword(password, stored) {
   const expected = Buffer.from(hex, 'hex');
   return key.length === expected.length && timingSafeEqual(key, expected);
 }
-export function requireAdmin(db, req) {
+export function requireAdmin(db, req, authKey = '') {
   const cookie = (req.headers.cookie || '').split(';').map((item) => item.trim()).find((item) => item.startsWith('session='));
   const token = cookie?.slice(8) || '';
-  const session = db.prepare('SELECT * FROM sessions WHERE token_hash = ? AND expires_at > ?').get(tokenHash(token), Date.now());
+  const session = db.prepare('SELECT * FROM sessions WHERE token_hash = ? AND expires_at > ? AND auth_key = ?').get(tokenHash(token), Date.now(), authKey);
   if (!session) throw new HttpError(401, 'Please sign in to continue.');
   return tokenHash(token);
 }
-export function createSession(db) {
+export function createSession(db, authKey = '') {
   const token = randomBytes(32).toString('base64url');
   db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(Date.now());
-  db.prepare('INSERT INTO sessions VALUES (?, ?)').run(tokenHash(token), Date.now() + 12 * 60 * 60_000);
+  db.prepare('INSERT INTO sessions (token_hash, expires_at, auth_key) VALUES (?, ?, ?)').run(tokenHash(token), Date.now() + 12 * 60 * 60_000, authKey);
   return token;
 }
 export function sessionCookie(token, secure = false) {

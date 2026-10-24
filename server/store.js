@@ -47,7 +47,15 @@ export function openStore(file = resolve(process.env.DATA_DIR || 'data', 'schedu
     CREATE TABLE IF NOT EXISTS videos (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, url TEXT NOT NULL UNIQUE, position INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS admin_challenges (
+      token_hash TEXT PRIMARY KEY, phone TEXT NOT NULL, verification_sid TEXT NOT NULL,
+      auth_key TEXT NOT NULL, expires_at INTEGER NOT NULL, attempts INTEGER NOT NULL, checking INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS admin_code_requests (id INTEGER PRIMARY KEY, requested_at INTEGER NOT NULL);
   `);
+  if (!db.prepare('PRAGMA table_info(sessions)').all().some((column) => column.name === 'auth_key')) {
+    db.exec("ALTER TABLE sessions ADD COLUMN auth_key TEXT NOT NULL DEFAULT ''");
+  }
   if (!db.prepare('SELECT id FROM settings').get()) {
     db.prepare('INSERT INTO settings VALUES (1, ?)').run(JSON.stringify(defaults));
     const insert = db.prepare('INSERT INTO services VALUES (?, ?, ?, ?, ?, 1, ?)');
