@@ -1,6 +1,6 @@
 # Haircut scheduler
 
-A complete starting point for a single barber: a studio landing page, online appointment scheduling, a photo and TikTok video gallery, and a private admin workspace with SMS sign-in. Clients book without an account.
+A complete starting point for a single barber: a studio landing page, online appointment scheduling, a photo and TikTok video gallery, and an email/password-protected admin workspace for up to two admins. Clients book without an account.
 
 The starter brand is **goodform.**, with an editable haircut price and duration, hours, and location. Gallery samples are clearly labeled as inspiration. Replace the defaults in the admin area before taking real bookings.
 
@@ -10,25 +10,15 @@ Requires **Node.js 24 or newer**. There are no external dependencies to install.
 
 ```sh
 cp .env.example .env
+npm run admin:create
 npm run dev
 ```
 
 Open **http://localhost:3000**. If file watching is unavailable on your system, use `npm start` instead. Use `localhost`, rather than `127.0.0.1`, to match the default `APP_ORIGIN`.
 
-Admin SMS sign-in requires a [Twilio account and Verify service](https://www.twilio.com/docs/verify/quickstarts/node-express). In the private `.env` file, set:
+Admin sign-in uses an email address and password. Run `npm run admin:create` once for each admin (up to two). Password entry is hidden and passwords must be 12–256 characters. Both accounts have full access to the same single-barber calendar and management settings. Clients book without accounts.
 
-```dotenv
-ADMIN_PHONES=+15551234567,+15557654321
-TWILIO_ACCOUNT_SID=your_account_sid
-TWILIO_AUTH_TOKEN=your_auth_token
-TWILIO_VERIFY_SERVICE_SID=your_verify_service_sid
-```
-
-Use one or two admin phone numbers with country codes, separated by a comma. Both admins have full access to the same single-barber calendar and management settings. Configure the Verify service for SMS and restart the app after changing these values. Trial Twilio accounts require verifying both recipient numbers before sending codes. SMS/Verify charges are handled by Twilio; this app does not create a Twilio account or purchase a number. Never put these credentials or the real admin number in source control.
-
-Only the numbers in `ADMIN_PHONES` can receive admin sign-in codes. A third number cannot be registered. The older single-number `ADMIN_PHONE` setting remains supported when `ADMIN_PHONES` is not set. There is no public admin registration. Codes are checked by Twilio on the server, expire, and can only establish one session per challenge. The browser receives an HttpOnly challenge cookie rather than the code. Resends have a 30-second cooldown and a persistent limit of five sends per hour for each admin number; verification allows at most five attempts per challenge. Twilio also enforces its own code and attempt limits.
-
-Existing email/password admin accounts remain usable through **Use existing email login** until all SMS settings are configured. Once SMS is configured, password sign-in is disabled, even if the SMS provider is temporarily unavailable. Adding the second admin preserves the first admin's sessions. Removing a number revokes that admin's sessions; the other admin stays signed in. Each admin has separate verification challenges and resend limits, and signing out affects only the current session. Changing the authentication method invalidates prior sessions. The legacy `npm run admin:create` command only creates/resets the temporary email/password login; it is not needed for SMS login.
+A new email adds an admin; entering an existing email resets only that account’s password and signs out that admin’s sessions. The other admin keeps access. Existing email/password credentials are preserved when upgrading. There is no public admin registration or default password, and no SMS provider or external credentials are needed for admin sign-in.
 
 ## What’s included
 
@@ -68,11 +58,11 @@ DATA_DIR=/your/persistent/data
 
 Back up the database and uploaded images together. For a simple consistent backup, stop the app and copy the entire data directory. Never commit runtime data or `.env`.
 
-Legacy passwords use salted scrypt hashes. Admin sessions use random tokens stored as hashes, with HttpOnly/SameSite cookies and a 12-hour expiry. Sessions are bound to the current admin identity and sign-in method. SMS codes are never returned by the API or printed to server logs. The server enforces request limits, same-origin writes, input validation, and security headers. Uploaded images are limited to JPEG/PNG/WebP and 5 MB. SVG and executable uploads are rejected.
+Passwords use salted scrypt hashes. Admin sessions use random tokens stored as hashes, with HttpOnly/SameSite cookies and a 12-hour expiry. Sessions are bound to the individual admin account and its current password. The server enforces request limits, same-origin writes, input validation, and security headers. Uploaded images are limited to JPEG/PNG/WebP and 5 MB. SVG and executable uploads are rejected.
 
 ## Scope
 
-Client confirmation emails/texts, payment processing, external calendar synchronization, and self-service rescheduling are not configured. Admin sign-in texts are separate and require the Twilio setup above. The confirmation screen explicitly tells clients to save their private management link; no confirmation email is promised. Calendar download works without a calendar integration. Appointment status changes do not send messages.
+Client confirmation emails/texts, payment processing, external calendar synchronization, and self-service rescheduling are not configured. The confirmation screen explicitly tells clients to save their private management link; no confirmation email is promised. Calendar download works without a calendar integration. Appointment status changes do not send messages.
 
 The TikTok gallery starts with three public videos from @l2cuts. Add or remove full video URLs in the admin’s TikTok videos tab. Videos use TikTok’s embedded player and require TikTok to be available; each card also links to the original video. New TikTok posts are added manually rather than automatically synced.
 
@@ -96,4 +86,4 @@ npm test
 
 The automated suite covers availability and service durations, overlap prevention (including competing requests), cancellation, studio time zones/DST, authentication and session revocation, CSRF protection, admin edits, image upload restrictions, and private-data access. It runs against isolated temporary or in-memory databases without opening a network port.
 
-Browser verification should cover desktop and mobile layouts, the full booking/confirmation flow, gallery filtering, admin phone/code login and logout (using an isolated test provider), a days-off change, a photo upload, and cancellation. Automated API tests do not replace those browser checks.
+Browser verification should cover desktop and mobile layouts, the full booking/confirmation flow, gallery filtering, both admin email/password logins and independent logout, a days-off change, a photo upload, and cancellation. Automated API tests do not replace those browser checks.
