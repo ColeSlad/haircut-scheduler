@@ -30,9 +30,9 @@ export function toTimestamp(date, time, timezone) {
   }
   return null;
 }
-export function availableSlots(db, date, serviceId, now = Date.now()) {
+export function availableSlots(db, date, serviceId = 'haircut', now = Date.now()) {
   if (!validDate(date)) throw new HttpError(400, 'Choose a valid date.');
-  if (typeof serviceId !== 'string' || serviceId.length > 80) throw new HttpError(400, 'Choose an available service.');
+  if (serviceId !== 'haircut') throw new HttpError(400, 'Only haircut appointments can be booked.');
   const config = settings(db);
   const service = db.prepare('SELECT * FROM services WHERE id = ? AND active = 1').get(serviceId);
   if (!service) throw new HttpError(400, 'Choose an available service.');
@@ -61,6 +61,7 @@ export function textField(value, label, max, required = true) {
   return value.trim();
 }
 export function createBooking(db, input, now = Date.now()) {
+  const serviceId = input.serviceId ?? 'haircut';
   const firstName = textField(input.firstName, 'first name', 50);
   const lastName = textField(input.lastName, 'last name', 50);
   const name = `${firstName} ${lastName}`;
@@ -70,9 +71,9 @@ export function createBooking(db, input, now = Date.now()) {
   if (!validTime(input.time)) throw new HttpError(400, 'Choose a valid time.');
   db.exec('BEGIN IMMEDIATE');
   try {
-    const slot = availableSlots(db, input.date, input.serviceId, now).find((item) => item.time === input.time);
+    const slot = availableSlots(db, input.date, serviceId, now).find((item) => item.time === input.time);
     if (!slot) throw new HttpError(409, 'That time is no longer available. Please choose another time.');
-    const service = db.prepare('SELECT * FROM services WHERE id = ?').get(input.serviceId);
+    const service = db.prepare('SELECT * FROM services WHERE id = ?').get(serviceId);
     const id = randomUUID();
     const token = randomBytes(32).toString('base64url');
     db.prepare(`INSERT INTO bookings (id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, token_hash, created_at)

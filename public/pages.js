@@ -27,10 +27,10 @@ export function home(data) {
   </section>
   <div class="section-shell home-details">
     <section class="services-section" id="services">
-      <h2>Services</h2>
+      <h2>Haircut</h2>
       <ul class="service-list">${services.map((service) => `<li>
         <div><h3>${esc(service.name)}</h3><p>${service.duration} minutes · ${money(service.price)}</p></div>
-        <a class="text-link" href="/schedule?service=${encodeURIComponent(service.id)}" aria-label="Book ${esc(service.name)}">Book</a>
+        <a class="text-link" href="/schedule" aria-label="Book ${esc(service.name)}">Book</a>
       </li>`).join('')}</ul>
       <p class="fine-print">Payment is taken at your appointment.</p>
     </section>

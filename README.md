@@ -2,7 +2,7 @@
 
 A complete starting point for a single barber: a studio landing page, online appointment scheduling, a photo gallery, and a password-protected admin workspace. Clients book without an account.
 
-The starter brand is **goodform.**, with editable sample services, hours, and location. Gallery samples are clearly labeled as inspiration. Replace the defaults in the admin area before taking real bookings.
+The starter brand is **goodform.**, with an editable haircut price and duration, hours, and location. Gallery samples are clearly labeled as inspiration. Replace the defaults in the admin area before taking real bookings.
 
 ## Run locally
 
@@ -20,17 +20,17 @@ The account command asks for an email and a password of at least 12 characters. 
 
 ## What’s included
 
-- **Landing page** (`/`): a short introduction, booking link, service list, location, and hours.
-- **Booking** (`/schedule`): choose a service, available date/time, and your first name, last name, and phone number. No email address or notes are collected. Prices are in USD, with payment at the appointment.
+- **Landing page** (`/`): a short introduction, booking link, haircut price, location, and hours.
+- **Booking** (`/schedule`): choose an available date/time, then enter your first name, last name, and phone number. No email address or notes are collected. Prices are in USD, with payment at the appointment.
 - **Confirmation** (`/booking#private-token`): appointment details, a private cancellation link, and an `.ics` calendar download. The token stays in the URL fragment rather than server access logs.
 - **Gallery** (`/gallery`): photo categories, sample-image labeling, and responsive layouts.
-- **Admin** (`/admin`): appointment search and status updates, weekly hours, full days off, service/pricing edits, photo uploads, and studio details.
+- **Admin** (`/admin`): appointment search and status updates, weekly hours, full days off, haircut price/duration edits, photo uploads, and studio details.
 
 Appointments, admin accounts, sessions, and settings persist in SQLite. Gallery uploads persist on disk. Booking validation and conflict checks run in an immediate database transaction so two clients cannot reserve overlapping time for the same barber.
 
 ## Defaults and booking rules
 
-The sample services are a 45-minute cut ($40), a 60-minute cut and beard ($55), and a 30-minute beard tidy ($20). Default hours are Tuesday–Friday 9 AM–6 PM and Saturday 9 AM–4 PM, in `America/New_York`.
+Haircut is the only booking option, initially 45 minutes and $40. The admin can change its price and duration. Existing installations keep the previous haircut price and duration; other service options are retired without changing past or upcoming appointments. Default hours are Tuesday–Friday 9 AM–6 PM and Saturday 9 AM–4 PM, in `America/New_York`.
 
 Starts are offered in 15-minute increments. A service must fit completely within the day’s hours. By default, clients must book at least one hour ahead and can book up to 60 days ahead. The studio time zone drives availability, independently of the server or visitor’s time zone, including daylight-saving changes.
 

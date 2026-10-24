@@ -30,7 +30,7 @@ export function createApi(db, { origin, secure, dataDir }) {
     if (path === '/api/public' && method === 'GET') return json(publicData(db));
     if (path === '/api/availability' && method === 'GET') {
       const date = url.searchParams.get('date');
-      return json({ slots: availableSlots(db, date, url.searchParams.get('service')), timezone: settings(db).timezone });
+      return json({ slots: availableSlots(db, date, url.searchParams.get('service') ?? undefined), timezone: settings(db).timezone });
     }
     if (path === '/api/bookings' && method === 'POST') {
       rateLimit(req, 'booking', 20, 60 * 60_000);
@@ -75,7 +75,7 @@ export function createApi(db, { origin, secure, dataDir }) {
         return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie('', secure) });
       }
       if (path === '/api/admin/data' && method === 'GET') {
-        return json({ ...publicData(db), services: db.prepare('SELECT * FROM services ORDER BY position').all(), bookings: db.prepare('SELECT id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, status, created_at FROM bookings ORDER BY starts_at DESC').all(), daysOff: db.prepare('SELECT * FROM days_off ORDER BY date').all() });
+        return json({ ...publicData(db), services: db.prepare("SELECT * FROM services WHERE id = 'haircut'").all(), bookings: db.prepare('SELECT id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, status, created_at FROM bookings ORDER BY starts_at DESC').all(), daysOff: db.prepare('SELECT * FROM days_off ORDER BY date').all() });
       }
       if (path === '/api/admin/settings' && method === 'PUT') {
         const input = await readJson(req);
@@ -116,25 +116,12 @@ export function createApi(db, { origin, secure, dataDir }) {
       }
       if (path === '/api/admin/services' && method === 'PUT') {
         const { services } = await readJson(req);
-        if (!Array.isArray(services) || services.length < 1 || services.length > 20 || !services.some((s) => s?.active)) throw new HttpError(400, 'Keep between 1 and 20 services, with at least one available.');
-        const ids = new Set();
-        const rows = services.map((service, position) => {
-          if (!service || typeof service !== 'object') throw new HttpError(400, 'Enter valid service details.');
-          const id = service.id || randomUUID();
-          if (typeof id !== 'string' || id.length > 80 || ids.has(id)) throw new HttpError(400, 'Invalid service ID.');
-          ids.add(id);
-          const name = textField(service.name, 'service name', 80);
-          const description = textField(service.description, 'service description', 400);
-          if (!Number.isInteger(service.duration) || service.duration < 15 || service.duration > 180 || service.duration % 15) throw new HttpError(400, 'Service duration must be 15–180 minutes in 15-minute increments.');
-          if (!Number.isInteger(service.price) || service.price < 0 || service.price > 100000) throw new HttpError(400, 'Price must be between $0 and $1,000.');
-          return [id, name, description, service.duration, service.price, service.active ? 1 : 0, position];
-        });
-        db.exec('BEGIN IMMEDIATE');
-        try {
-          db.exec('DELETE FROM services');
-          for (const row of rows) db.prepare('INSERT INTO services VALUES (?, ?, ?, ?, ?, ?, ?)').run(...row);
-          db.exec('COMMIT');
-        } catch (error) { db.exec('ROLLBACK'); throw error; }
+        if (!Array.isArray(services) || services.length !== 1) throw new HttpError(400, 'Keep exactly one haircut service.');
+        const service = services[0];
+        if (service?.id !== 'haircut' || ![true, 1].includes(service.active)) throw new HttpError(400, 'Keep the haircut service available.');
+        if (!Number.isInteger(service.duration) || service.duration < 15 || service.duration > 180 || service.duration % 15) throw new HttpError(400, 'Haircut duration must be 15–180 minutes in 15-minute increments.');
+        if (!Number.isInteger(service.price) || service.price < 0 || service.price > 100000) throw new HttpError(400, 'Price must be between $0 and $1,000.');
+        db.prepare("UPDATE services SET duration = ?, price = ? WHERE id = 'haircut'").run(service.duration, service.price);
         return json({ ok: true });
       }
       if (/^\/api\/admin\/bookings\/[^/]+$/.test(path) && method === 'PATCH') {

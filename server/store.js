@@ -48,15 +48,23 @@ export function openStore(file = resolve(process.env.DATA_DIR || 'data', 'schedu
   if (!db.prepare('SELECT id FROM settings').get()) {
     db.prepare('INSERT INTO settings VALUES (1, ?)').run(JSON.stringify(defaults));
     const insert = db.prepare('INSERT INTO services VALUES (?, ?, ?, ?, ?, 1, ?)');
-    insert.run('signature-cut', 'The signature cut', 'A consultation, a thoughtful cut, and a style to finish. All you, just a little sharper.', 45, 4000, 0);
-    insert.run('cut-and-beard', 'Cut + beard', 'The full refresh. A tailored haircut with a beard shape-up and clean edges.', 60, 5500, 1);
-    insert.run('beard-tidy', 'The beard tidy', 'A little maintenance goes a long way. Shape, trim, and a clean finish.', 30, 2000, 2);
+    insert.run('haircut', 'Haircut', 'A haircut.', 45, 4000, 0);
     const hours = db.prepare('INSERT INTO hours VALUES (?, ?, ?, ?)');
     for (let day = 0; day < 7; day++) hours.run(day, day > 1 ? 1 : 0, '09:00', day === 6 ? '16:00' : '18:00');
     const gallery = db.prepare('INSERT INTO gallery VALUES (?, ?, ?, ?, ?, 1, ?)');
     gallery.run('sample-1', 'Clean lines, easy days', 'Short cuts', '/assets/cut-1.jpg', 'Sample haircut inspiration: a short textured haircut', 0);
     gallery.run('sample-2', 'A little texture', 'Texture', '/assets/cut-2.jpg', 'Sample haircut inspiration: textured hair and a natural finish', 1);
     gallery.run('sample-3', 'The finishing touch', 'Beards', '/assets/cut-3.jpg', 'Sample inspiration: a carefully shaped beard', 2);
+  }
+  if (db.prepare('PRAGMA user_version').get().user_version < 1) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      // Keep the existing haircut price/duration and historical service snapshots.
+      const previous = db.prepare("SELECT * FROM services ORDER BY CASE id WHEN 'haircut' THEN 0 WHEN 'signature-cut' THEN 1 ELSE 2 END, active DESC, position LIMIT 1").get();
+      db.prepare("INSERT OR IGNORE INTO services VALUES ('haircut', 'Haircut', 'A haircut.', ?, ?, 1, 0)").run(previous?.duration || 45, previous?.price ?? 4000);
+      db.exec("UPDATE services SET active = 0 WHERE id <> 'haircut'; PRAGMA user_version = 1;");
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); db.close(); throw error; }
   }
   return db;
 }
@@ -68,7 +76,7 @@ export function settings(db) {
 export function publicData(db) {
   return {
     settings: settings(db),
-    services: db.prepare('SELECT * FROM services WHERE active = 1 ORDER BY position').all(),
+    services: db.prepare("SELECT * FROM services WHERE id = 'haircut' AND active = 1").all(),
     hours: db.prepare('SELECT * FROM hours ORDER BY day').all(),
     gallery: db.prepare('SELECT * FROM gallery ORDER BY position').all(),
   };

@@ -44,8 +44,8 @@ function futureSlot(db) {
   for (let i = 1; i < 15; i++) {
     const date = new Date(`${today}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + i);
     const day = date.toISOString().slice(0, 10);
-    const slots = availableSlots(db, day, 'signature-cut', now);
-    if (slots.length) return { serviceId: 'signature-cut', date: day, time: slots[0].time, firstName: 'Sam', lastName: 'Example', phone: '555-123-4567' };
+    const slots = availableSlots(db, day, 'haircut', now);
+    if (slots.length) return { date: day, time: slots[0].time, firstName: 'Sam', lastName: 'Example', phone: '555-123-4567' };
   }
   throw new Error('No future test slot');
 }
@@ -121,6 +121,32 @@ test('booking requires first name, last name, and phone without collecting email
   assert.equal(result.status, 201);
   const saved = db.prepare('SELECT name, phone, email, notes FROM bookings').get();
   assert.deepEqual({ ...saved }, { name: 'Sam Example', phone: input.phone, email: '', notes: '' });
+});
+test('only the haircut is public and bookable, and admin cannot add other options', async (t) => {
+  const { db, request, login } = await fixture(t);
+  db.prepare('INSERT INTO services VALUES (?, ?, ?, ?, ?, 1, ?)').run('legacy-beard', 'Beard', 'Legacy service', 30, 2000, 1);
+  const publicResult = await request('/api/public');
+  assert.deepEqual(publicResult.body.services.map((service) => service.name), ['Haircut']);
+  const input = futureSlot(db);
+  assert((await request(`/api/availability?date=${input.date}`)).body.slots.length > 0);
+  assert.equal((await request(`/api/availability?date=${input.date}&service=legacy-beard`)).status, 400);
+  assert.equal((await request('/api/bookings', { method: 'POST', body: { ...input, serviceId: 'legacy-beard' } })).status, 400);
+  const headers = { cookie: await login() };
+  const adminResult = await request('/api/admin/data', { headers });
+  assert.equal(adminResult.body.services.length, 1);
+  const haircut = adminResult.body.services[0];
+  for (const services of [[haircut, { ...haircut, id: 'extra' }], [{ ...haircut, id: 'extra' }], [{ ...haircut, active: false }], [{ ...haircut, duration: 0 }], [{ ...haircut, price: -1 }]]) {
+    assert.equal((await request('/api/admin/services', { method: 'PUT', body: { services }, headers })).status, 400);
+  }
+  const booked = await request('/api/bookings', { method: 'POST', body: input });
+  assert.equal(booked.status, 201);
+  assert.equal((await request('/api/admin/services', { method: 'PUT', body: { services: [{ ...haircut, name: 'Other name', duration: 60, price: 5000 }] }, headers })).status, 200);
+  const updated = (await request('/api/public')).body.services[0];
+  assert.equal(updated.name, 'Haircut');
+  assert.equal(updated.duration, 60);
+  assert.equal(updated.price, 5000);
+  const saved = db.prepare('SELECT service_name, duration, price FROM bookings WHERE id = ?').get(booked.body.id);
+  assert.deepEqual({ ...saved }, { service_name: 'Haircut', duration: 45, price: 4000 });
 });
 test('admin can update the business, services, and availability with validation', async (t) => {
   const { db, request, login } = await fixture(t);
