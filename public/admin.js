@@ -1,5 +1,5 @@
-import { $, $$, esc, money, timeLabel, dateLabel, todayIn, dayNames, categories, api, arrow, smallIcon, toast, loadingButton, fieldError, imageEvents } from './shared.js?v=5';
-import { galleryImage } from './pages.js?v=5';
+import { $, $$, esc, money, timeLabel, dateLabel, todayIn, dayNames, categories, api, arrow, smallIcon, toast, loadingButton, fieldError, imageEvents } from './shared.js?v=6';
+import { galleryImage } from './pages.js?v=6';
 
 export async function mountAdmin(publicData, { refreshData }) {
   const root = $('#main');
@@ -10,66 +10,19 @@ export async function mountAdmin(publicData, { refreshData }) {
   let filter = 'upcoming';
   let search = '';
   let editing = false;
-  let loginMode = 'phone';
-  let loginPhone = '';
-  let resendAt = 0;
-  let resendTimer;
-  async function signedIn() {
-    await load();
-    session.authenticated = true;
-    loginMode = 'phone';
-    clearTimeout(resendTimer);
-    render();
-  }
   function login() {
     if (location.pathname !== '/admin' || !root.isConnected) return;
-    clearTimeout(resendTimer);
-    const passwordMode = loginMode === 'password' && session.passwordAvailable;
-    const codeMode = loginMode === 'code' && session.smsReady;
-    root.innerHTML = `<section class="login-section section-shell"><a href="/" class="back-link">← Home</a><div class="login-card"><h1>Admin sign in</h1>${passwordMode ? `<p>Use your existing admin email and password until SMS setup is complete.</p><form id="login-form"><label>Email address<input name="email" type="email" autocomplete="username" required maxlength="254"></label><label>Password<input name="password" type="password" autocomplete="current-password" required maxlength="256"></label><p class="form-error" data-error role="alert" tabindex="-1" hidden></p><button class="button primary" type="submit">Sign in</button></form><button class="text-link" id="use-phone-login">Back to phone sign in</button>` : codeMode ? `<p>If this is your admin number, a code was sent to ${esc(loginPhone)}.</p><form id="code-form"><label>One-time code<input name="code" id="admin-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{4,10}" minlength="4" maxlength="10" required></label><p class="form-error" data-error role="alert" tabindex="-1" hidden></p><button class="button primary" type="submit">Sign in</button><button class="text-link" id="resend-code" type="button" ${Date.now() < resendAt ? 'disabled' : ''}>Resend code</button><button class="text-link" id="change-phone" type="button">Use a different number</button></form>` : `<p>Enter your admin phone number to get a one-time code by text.</p><form id="phone-form"><label>Phone number<input name="phone" type="tel" autocomplete="tel" maxlength="40" required value="${esc(loginPhone)}" placeholder="+1 555 123 4567"></label><p class="form-error" data-error role="alert" tabindex="-1" hidden></p><button class="button primary" type="submit" ${!session.smsReady ? 'disabled' : ''}>Send code</button></form>${!session.smsReady ? '<div class="setup-note"><p>SMS sign-in setup is not complete yet.</p><button class="button outline" id="check-setup">Check setup</button></div>' : ''}${session.passwordAvailable ? '<button class="text-link" id="use-password-login">Use existing email login</button>' : ''}`}</div></section>`;
-    $('#use-password-login')?.addEventListener('click', () => { loginMode = 'password'; login(); });
-    $('#use-phone-login')?.addEventListener('click', () => { loginMode = 'phone'; login(); });
-    $('#change-phone')?.addEventListener('click', () => { loginMode = 'phone'; login(); });
+    root.innerHTML = `<section class="login-section section-shell"><a href="/" class="back-link">← Home</a><div class="login-card"><h1>Admin sign in</h1><p>Sign in with your email and password.</p>${session.configured ? `<form id="login-form"><label>Email address<input name="email" type="email" autocomplete="username" required maxlength="254" placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="current-password" required maxlength="256" placeholder="Your password"></label><p class="form-error" data-error role="alert" tabindex="-1" hidden></p><button class="button primary" type="submit">Sign in</button></form><p class="fine-print">To reset your password, run <code>npm run admin:create</code> in the project terminal with your existing email.</p>` : '<div class="setup-note"><p>Run <code>npm run admin:create</code> in the project terminal to create an admin account. Run it again with a different email to add the second admin.</p><button class="button outline" id="check-setup">I’ve created my account</button></div>'}</div></section>`;
     $('#check-setup')?.addEventListener('click', async () => {
       try { session = await api('/api/admin/session'); login(); } catch (error) { toast(error.message); }
-    });
-    $('#phone-form')?.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const form = event.currentTarget;
-      loginPhone = new FormData(form).get('phone').trim();
-      await sendCode($('button[type="submit"]', form), form);
-    });
-    $('#resend-code')?.addEventListener('click', (event) => sendCode(event.currentTarget, $('#code-form')));
-    if (codeMode && Date.now() < resendAt) {
-      const resend = $('#resend-code');
-      resendTimer = setTimeout(() => { if (resend.isConnected) resend.disabled = false; }, resendAt - Date.now());
-    }
-    $('#code-form')?.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const form = event.currentTarget;
-      const restore = loadingButton($('button[type="submit"]', form), 'Checking code…');
-      $('[data-error]', form).hidden = true;
-      try { await api('/api/admin/verify-code', { method: 'POST', body: { phone: loginPhone, code: new FormData(form).get('code') } }); await signedIn(); }
-      catch (error) { fieldError(form, error); } finally { restore(); }
     });
     $('#login-form')?.addEventListener('submit', async (event) => {
       event.preventDefault();
       const form = event.currentTarget;
       const restore = loadingButton($('button[type="submit"]', form), 'Signing in…');
-      try { await api('/api/admin/login', { method: 'POST', body: Object.fromEntries(new FormData(form)) }); await signedIn(); }
+      try { await api('/api/admin/login', { method: 'POST', body: Object.fromEntries(new FormData(form)) }); await load(); session.authenticated = true; render(); }
       catch (error) { fieldError(form, error); } finally { restore(); }
     });
-  }
-  async function sendCode(button, form) {
-    const restore = loadingButton(button, 'Sending…');
-    $('[data-error]', form).hidden = true;
-    try {
-      const result = await api('/api/admin/request-code', { method: 'POST', body: { phone: loginPhone } });
-      resendAt = Date.now() + result.retryAfter * 1000;
-      loginMode = 'code';
-      login();
-      $('#admin-code')?.focus();
-    } catch (error) { fieldError(form, error); } finally { restore(); }
   }
   async function load() { data = await api('/api/admin/data'); }
   async function save(path, body, button) {
@@ -130,7 +83,7 @@ export async function mountAdmin(publicData, { refreshData }) {
   function bind() {
     root.oninput = () => { editing = true; };
     $('#logout').addEventListener('click', async () => {
-      try { await api('/api/admin/logout', { method: 'POST', body: {} }); editing = false; session.authenticated = false; loginPhone = ''; loginMode = 'phone'; login(); toast('Signed out. See you soon.'); } catch (error) { toast(error.message); }
+      try { await api('/api/admin/logout', { method: 'POST', body: {} }); editing = false; session.authenticated = false; login(); toast('Signed out. See you soon.'); } catch (error) { toast(error.message); }
     });
     $$('[data-tab]').forEach((button) => button.addEventListener('click', () => {
       const next = button.dataset.tab;
