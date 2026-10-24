@@ -53,7 +53,7 @@ test('only the configured admin receives codes and each challenge is consumed on
   const stored = db.prepare('SELECT * FROM admin_challenges').get();
   assert.notEqual(stored.token_hash, challenge.token);
   assert.equal(stored.code, undefined);
-  assert.equal(await sms.verifyCode(phone, '123456', challenge.token), sms.authKey);
+  assert.equal(await sms.verifyCode(phone, '123456', challenge.token), sms.authKeys[0]);
   await assert.rejects(sms.verifyCode(phone, '123456', challenge.token), { status: 401 });
 });
 
@@ -96,7 +96,7 @@ test('parallel verification and provider failures cannot bypass one-time use', a
   const checking = sms.verifyCode(phone, '123456', challenge.token);
   await assert.rejects(sms.verifyCode(phone, '123456', challenge.token), { status: 401 });
   approve(true);
-  assert.equal(await checking, sms.authKey);
+  assert.equal(await checking, sms.authKeys[0]);
   await assert.rejects(sms.verifyCode(phone, '123456', challenge.token), { status: 401 });
 });
 
@@ -118,4 +118,57 @@ test('sessions cannot survive an admin identity or authentication-method change'
   assert.throws(() => requireAdmin(db, req, 'different-phone-or-login-method'), { status: 401 });
   db.prepare('UPDATE sessions SET expires_at = 0').run();
   assert.throws(() => requireAdmin(db, req, 'original-admin-identity'), { status: 401 });
+});
+
+test('two admins have separate challenges, resend limits, and session identities', async (t) => {
+  const secondPhone = '+15557654321';
+  const { sms, calls, advance } = fixture(t, { phones: [phone, secondPhone] });
+  const first = await sms.requestCode(phone);
+  const second = await sms.requestCode(secondPhone);
+  assert.deepEqual(calls.send, [phone, secondPhone]);
+  await assert.rejects(sms.verifyCode(secondPhone, '123456', first.token), { status: 401 });
+  await assert.rejects(sms.requestCode(phone), { status: 429 });
+  await assert.rejects(sms.requestCode(secondPhone), { status: 429 });
+  const firstKey = await sms.verifyCode(phone, '123456', first.token);
+  const secondKey = await sms.verifyCode(secondPhone, '123456', second.token);
+  assert.notEqual(firstKey, secondKey);
+  for (let i = 1; i < 5; i++) { advance(30_000); await sms.requestCode(phone); }
+  advance(30_000);
+  await assert.rejects(sms.requestCode(phone), { status: 429 });
+  await sms.requestCode(secondPhone);
+  assert.equal(calls.send.filter((number) => number === secondPhone).length, 2);
+});
+
+test('adding an admin preserves existing sessions and removing one revokes only their access', async (t) => {
+  const secondPhone = '+15557654321';
+  const { db, sms, provider, options } = fixture(t);
+  const firstChallenge = await sms.requestCode(phone);
+  const firstKey = await sms.verifyCode(phone, '123456', firstChallenge.token);
+  const firstReq = { headers: { cookie: `session=${createSession(db, firstKey)}` } };
+  const both = createAdminSms(db, { ...options, phones: [phone, secondPhone] });
+  requireAdmin(db, firstReq, both.authKeys);
+  const secondChallenge = await both.requestCode(secondPhone);
+  const secondKey = await both.verifyCode(secondPhone, '123456', secondChallenge.token);
+  const secondReq = { headers: { cookie: `session=${createSession(db, secondKey)}` } };
+  const remaining = createAdminSms(db, { phones: [secondPhone], provider });
+  assert.throws(() => requireAdmin(db, firstReq, remaining.authKeys), { status: 401 });
+  requireAdmin(db, secondReq, remaining.authKeys);
+});
+
+test('the allowlist supports two formatted numbers and rejects duplicates or a third admin', (t) => {
+  const { db, provider } = fixture(t);
+  assert.equal(createAdminSms(db, { phones: '(555) 123-4567, +1 555 765 4321', provider }).authKeys.length, 2);
+  for (const phones of [[phone, '(555) 123-4567'], [phone, '+15557654321', '+15550000000'], [phone, 'invalid']]) {
+    const sms = createAdminSms(db, { phones, provider });
+    assert.equal(sms.configured, false);
+    assert.deepEqual(sms.authKeys, []);
+  }
+});
+
+test('single-admin send counters stay attached to that admin after an upgrade', async (t) => {
+  const { db, provider, options } = fixture(t);
+  db.prepare('INSERT INTO admin_code_requests (requested_at) VALUES (?)').run(options.now());
+  const sms = createAdminSms(db, { ...options, phones: [phone, '+15557654321'], provider });
+  await assert.rejects(sms.requestCode(phone), { status: 429 });
+  await sms.requestCode('+15557654321');
 });

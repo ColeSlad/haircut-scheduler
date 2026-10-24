@@ -119,8 +119,40 @@ test('SMS setup failures, cross-origin requests, and send abuse do not create se
   assert.equal((await request('/api/admin/session')).body.passwordAvailable, true);
   assert.equal((await request('/api/admin/request-code', { method: 'POST', body: { phone: '+15551234567' }, headers: { origin: 'https://other.example' } })).status, 403);
   assert.equal((await request('/api/admin/verify-code', { method: 'POST', body: { phone: '+15551234567', code: '123456' }, headers: { origin: 'https://other.example' } })).status, 403);
-  for (let i = 0; i < 5; i++) await request('/api/admin/request-code', { method: 'POST', body: { phone: '+15557654321' } });
+  for (let i = 0; i < 10; i++) await request('/api/admin/request-code', { method: 'POST', body: { phone: '+15557654321' } });
   assert.equal((await request('/api/admin/request-code', { method: 'POST', body: { phone: '+15557654321' } })).status, 429);
+});
+test('two phone admins have full management access and independent logout', async (t) => {
+  const phones = ['+15551234567', '+15557654321'];
+  const codes = ['123456', '654321'];
+  const sent = [];
+  const provider = { identity: 'two-admin-test', async send(phone) { sent.push(phone); return phone; }, async check(sid, code) { return code === codes[phones.indexOf(sid)]; } };
+  const { request, db } = await fixture(t, { phones, provider });
+  const challenges = [];
+  for (const phone of phones) {
+    const result = await request('/api/admin/request-code', { method: 'POST', body: { phone } });
+    assert.equal(result.status, 202);
+    challenges.push(result.headers['set-cookie'].split(';')[0]);
+  }
+  const third = await request('/api/admin/request-code', { method: 'POST', body: { phone: '+15550000000' } });
+  assert.equal(third.status, 202);
+  assert.deepEqual(sent, phones);
+  assert.equal((await request('/api/admin/verify-code', { method: 'POST', headers: { cookie: challenges[0] }, body: { phone: phones[1], code: codes[1] } })).status, 401);
+  const cookies = [];
+  for (let i = 0; i < phones.length; i++) {
+    const verified = await request('/api/admin/verify-code', { method: 'POST', headers: { cookie: challenges[i] }, body: { phone: phones[i], code: codes[i] } });
+    assert.equal(verified.status, 200);
+    const cookie = verified.headers['set-cookie'].find((value) => value.startsWith('session=')).split(';')[0];
+    cookies.push(cookie);
+    assert.equal((await request('/api/admin/settings', { method: 'PUT', headers: { cookie }, body: { ...settings(db), name: `Admin ${i + 1} studio` } })).status, 200);
+  }
+  assert.equal(db.prepare('SELECT count(DISTINCT auth_key) AS count FROM sessions').get().count, 2);
+  for (const cookie of cookies) assert.equal((await request('/api/admin/data', { headers: { cookie } })).status, 200);
+  assert.equal((await request('/api/admin/logout', { method: 'POST', headers: { cookie: cookies[0] }, body: {} })).status, 200);
+  assert.equal((await request('/api/admin/data', { headers: { cookie: cookies[0] } })).status, 401);
+  assert.equal((await request('/api/admin/data', { headers: { cookie: cookies[1] } })).status, 200);
+  const publicResult = JSON.stringify((await request('/api/public')).body);
+  for (const phone of phones) assert(!publicResult.includes(phone));
 });
 test('cross-origin and malformed JSON requests are rejected', async (t) => {
   const { request } = await fixture(t);

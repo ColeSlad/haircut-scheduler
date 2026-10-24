@@ -58,13 +58,16 @@ test('old session tables migrate without changing an existing admin account', (t
   const file = join(directory, 'scheduler.sqlite');
   const old = new DatabaseSync(file);
   old.exec(`CREATE TABLE sessions (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
-    CREATE TABLE admin (id INTEGER PRIMARY KEY CHECK(id = 1), email TEXT NOT NULL, password_hash TEXT NOT NULL);`);
+    CREATE TABLE admin (id INTEGER PRIMARY KEY CHECK(id = 1), email TEXT NOT NULL, password_hash TEXT NOT NULL);
+    CREATE TABLE admin_code_requests (id INTEGER PRIMARY KEY, requested_at INTEGER NOT NULL);`);
   old.prepare('INSERT INTO admin VALUES (1, ?, ?)').run('existing@example.com', 'existing-password-hash');
   old.prepare('INSERT INTO sessions VALUES (?, ?)').run('old-session-hash', Date.now() + 60000);
+  old.prepare('INSERT INTO admin_code_requests (requested_at) VALUES (?)').run(Date.now());
   old.close();
   const db = openStore(file);
   t.after(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
   assert.equal(db.prepare('SELECT password_hash FROM admin WHERE id = 1').get().password_hash, 'existing-password-hash');
   assert.equal(db.prepare('SELECT auth_key FROM sessions').get().auth_key, '');
   assert(db.prepare('PRAGMA table_info(sessions)').all().some((column) => column.name === 'auth_key'));
+  assert.equal(db.prepare('SELECT phone_key FROM admin_code_requests').get().phone_key, '');
 });

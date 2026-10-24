@@ -10,7 +10,7 @@ import { tiktokVideoUrl } from './videos.js';
 const categories = ['Short cuts', 'Texture', 'Beards', 'Long cuts'];
 export function createApi(db, { origin, secure, dataDir, sms }) {
   const limits = new Map();
-  const authKey = () => sms.configured ? sms.authKey : passwordAuthKey(db);
+  const authKeys = () => sms.configured ? sms.authKeys : [passwordAuthKey(db)];
   function rateLimit(req, kind, max, duration) {
     const key = `${kind}:${req.socket.remoteAddress}`;
     const now = Date.now();
@@ -58,12 +58,12 @@ export function createApi(db, { origin, secure, dataDir, sms }) {
     }
     if (path === '/api/admin/session' && method === 'GET') {
       let authenticated = false;
-      try { requireAdmin(db, req, authKey()); authenticated = true; } catch { /* Visitor is signed out. */ }
+      try { requireAdmin(db, req, authKeys()); authenticated = true; } catch { /* Visitor is signed out. */ }
       const passwordAvailable = !sms.configured && Boolean(db.prepare('SELECT id FROM admin').get());
       return json({ authenticated, configured: sms.configured || passwordAvailable, smsReady: sms.configured, passwordAvailable });
     }
     if (path === '/api/admin/request-code' && method === 'POST') {
-      rateLimit(req, 'code-send', 5, 15 * 60_000);
+      rateLimit(req, 'code-send', 10, 15 * 60_000);
       const input = await readJson(req);
       const result = await sms.requestCode(input.phone);
       return json({ ok: true, retryAfter: result.retryAfter }, 202, { 'Set-Cookie': challengeCookie(result.token, secure) });
@@ -83,10 +83,10 @@ export function createApi(db, { origin, secure, dataDir, sms }) {
       const password = input.password;
       const admin = db.prepare('SELECT * FROM admin WHERE id = 1').get();
       if (!admin || !(await verifyPassword(password, admin.password_hash)) || admin.email !== email) throw new HttpError(401, 'Email or password is incorrect.');
-      return json({ authenticated: true }, 200, { 'Set-Cookie': sessionCookie(createSession(db, authKey()), secure) });
+      return json({ authenticated: true }, 200, { 'Set-Cookie': sessionCookie(createSession(db, passwordAuthKey(db)), secure) });
     }
     if (path.startsWith('/api/admin/')) {
-      const session = requireAdmin(db, req, authKey());
+      const session = requireAdmin(db, req, authKeys());
       if (path === '/api/admin/logout' && method === 'POST') {
         db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(session);
         return json({ ok: true }, 200, { 'Set-Cookie': [sessionCookie('', secure), challengeCookie('', secure)] });

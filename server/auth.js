@@ -21,10 +21,11 @@ export function passwordAuthKey(db) {
 export function readCookie(req, name) {
   return (req.headers.cookie || '').split(';').map((item) => item.trim()).find((item) => item.startsWith(`${name}=`))?.slice(name.length + 1) || '';
 }
-export function requireAdmin(db, req, authKey = '') {
+export function requireAdmin(db, req, authKeys = '') {
   const token = readCookie(req, 'session');
-  const session = db.prepare('SELECT * FROM sessions WHERE token_hash = ? AND expires_at > ? AND auth_key = ?').get(tokenHash(token), Date.now(), authKey);
-  if (!session) throw new HttpError(401, 'Please sign in to continue.');
+  const session = db.prepare('SELECT * FROM sessions WHERE token_hash = ? AND expires_at > ?').get(tokenHash(token), Date.now());
+  const allowedKeys = Array.isArray(authKeys) ? authKeys : [authKeys];
+  if (!session || !allowedKeys.includes(session.auth_key)) throw new HttpError(401, 'Please sign in to continue.');
   return tokenHash(token);
 }
 export function createSession(db, authKey = '') {
