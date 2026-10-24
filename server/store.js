@@ -73,7 +73,7 @@ export function openStore(file = resolve(process.env.DATA_DIR || 'data', 'schedu
     db.exec('BEGIN IMMEDIATE');
     try {
       const insert = db.prepare('INSERT OR IGNORE INTO videos VALUES (?, ?, ?, ?)');
-      ['7700290410312142093', '7698458409233878285', '7698090850827390221'].forEach((id, position) => {
+      ['7698458409233878285', '7698090850827390221', '7696960651863936269'].forEach((id, position) => {
         insert.run(`tiktok-${id}`, `TikTok video ${position + 1}`, `https://www.tiktok.com/@l2cuts/video/${id}`, position);
       });
       db.exec('PRAGMA user_version = 2; COMMIT;');

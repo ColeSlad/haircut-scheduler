@@ -1,6 +1,6 @@
 # Haircut scheduler
 
-A complete starting point for a single barber: a studio landing page, online appointment scheduling, a photo gallery, and a password-protected admin workspace. Clients book without an account.
+A complete starting point for a single barber: a studio landing page, online appointment scheduling, a photo and TikTok video gallery, and a password-protected admin workspace. Clients book without an account.
 
 The starter brand is **goodform.**, with an editable haircut price and duration, hours, and location. Gallery samples are clearly labeled as inspiration. Replace the defaults in the admin area before taking real bookings.
 
@@ -23,8 +23,8 @@ The account command asks for an email and a password of at least 12 characters. 
 - **Landing page** (`/`): a short introduction, booking link, haircut price, location, and hours.
 - **Booking** (`/schedule`): choose an available date/time, then enter your first name, last name, and phone number. No email address or notes are collected. Prices are in USD, with payment at the appointment.
 - **Confirmation** (`/booking#private-token`): appointment details, a private cancellation link, and an `.ics` calendar download. The token stays in the URL fragment rather than server access logs.
-- **Gallery** (`/gallery`): photo categories, sample-image labeling, and responsive layouts.
-- **Admin** (`/admin`): appointment search and status updates, weekly hours, full days off, haircut price/duration edits, photo uploads, and studio details.
+- **Gallery** (`/gallery`): playable TikTok videos from [@l2cuts](https://www.tiktok.com/@l2cuts), photo categories, sample-image labeling, and responsive layouts.
+- **Admin** (`/admin`): appointment search and status updates, weekly hours, full days off, haircut price/duration edits, photo uploads, TikTok video links/titles, and studio details.
 
 Appointments, admin accounts, sessions, and settings persist in SQLite. Gallery uploads persist on disk. Booking validation and conflict checks run in an immediate database transaction so two clients cannot reserve overlapping time for the same barber.
 
@@ -62,7 +62,9 @@ Passwords use salted scrypt hashes. Admin sessions use random tokens stored as h
 
 Email/SMS delivery, payment processing, external calendar synchronization, and self-service rescheduling are not configured. The confirmation screen explicitly tells clients to save their private management link; no confirmation email is promised. Calendar download works without a calendar integration. Appointment status changes do not send messages.
 
-The sample gallery uses remote Unsplash images. A plain placeholder appears if images cannot load. Upload the barber’s own images in the admin area to replace the gallery samples.
+The TikTok gallery starts with three public videos from @l2cuts. Add or remove full video URLs in the admin’s TikTok videos tab. Videos use TikTok’s embedded player and require TikTok to be available; each card also links to the original video. New TikTok posts are added manually rather than automatically synced.
+
+The sample photo gallery uses remote Unsplash images. A plain placeholder appears if images cannot load. Upload the barber’s own images in the admin area to replace the gallery samples.
 
 ## Project layout
 

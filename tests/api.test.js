@@ -217,6 +217,8 @@ test('static routing does not expose server files, databases, or environment fil
   const home = await request('/');
   assert.equal(home.status, 200);
   assert.match(home.headers['content-security-policy'], /frame-ancestors 'none'/);
+  assert.match(home.headers['content-security-policy'], /frame-src https:\/\/www\.tiktok\.com;/);
+  assert.match(home.headers['content-security-policy'], /script-src 'self';/);
   assert.equal(home.headers['referrer-policy'], 'no-referrer');
 });
 test('repeated login failures are rate-limited', async (t) => {
