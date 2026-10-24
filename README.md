@@ -20,7 +20,7 @@ The account command asks for an email and a password of at least 12 characters. 
 
 ## What’s included
 
-- **Landing page** (`/`): studio introduction, service menu, gallery preview, location, and hours.
+- **Landing page** (`/`): a short introduction, booking link, service list, location, and hours.
 - **Booking** (`/schedule`): choose a service, available date/time, and contact details. Prices are in USD, with payment at the appointment.
 - **Confirmation** (`/booking#private-token`): appointment details, a private cancellation link, and an `.ics` calendar download. The token stays in the URL fragment rather than server access logs.
 - **Gallery** (`/gallery`): photo categories, sample-image labeling, and responsive layouts.
@@ -62,7 +62,7 @@ Passwords use salted scrypt hashes. Admin sessions use random tokens stored as h
 
 Email/SMS delivery, payment processing, external calendar synchronization, and self-service rescheduling are not configured. The confirmation screen explicitly tells clients to save their private management link; no confirmation email is promised. Calendar download works without a calendar integration. Appointment status changes do not send messages.
 
-The hero and sample gallery use remote Unsplash images. A local illustration appears if images cannot load. Upload the barber’s own images in the admin area to replace the gallery samples.
+The sample gallery uses remote Unsplash images. A plain placeholder appears if images cannot load. Upload the barber’s own images in the admin area to replace the gallery samples.
 
 ## Project layout
 
