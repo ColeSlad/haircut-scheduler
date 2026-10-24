@@ -1,4 +1,4 @@
-import { $, $$, esc, arrow, imageEvents, api } from './shared.js?v=2';
+import { $, esc, imageEvents, api } from './shared.js?v=2';
 import { home, galleryPage, mountGallery } from './pages.js?v=2';
 import { mountScheduler, mountConfirmation } from './booking.js?v=2';
 import { mountAdmin } from './admin.js?v=2';
@@ -7,10 +7,20 @@ let routeId = 0;
 const app = $('#app');
 
 function header(path) {
-  return `<header class="site-header section-shell"><a class="wordmark" href="/" aria-label="${esc(data.settings.name)} home">${esc(data.settings.name)}</a><nav class="desktop-nav" aria-label="Main navigation"><a href="/" ${path === '/' ? 'aria-current="page"' : ''}>The studio</a><a href="/schedule" ${path === '/schedule' ? 'aria-current="page"' : ''}>Book a cut</a><a href="/gallery" ${path === '/gallery' ? 'aria-current="page"' : ''}>The gallery</a></nav><a class="button header-book" href="/schedule">Save me a seat ${arrow}</a><button class="menu-button" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-nav"><span></span><span></span></button><nav class="mobile-nav" id="mobile-nav" aria-label="Mobile navigation" hidden><a href="/">The studio</a><a href="/schedule">Book a cut</a><a href="/gallery">The gallery</a></nav></header>`;
+  return `<header class="site-header section-shell">
+    <a class="wordmark" href="/" aria-label="${esc(data.settings.name)} home">${esc(data.settings.name)}</a>
+    <nav class="site-nav" aria-label="Main navigation">
+      <a href="/" ${path === '/' ? 'aria-current="page"' : ''}>Home</a>
+      <a href="/schedule" ${path === '/schedule' ? 'aria-current="page"' : ''}>Book a cut</a>
+      <a href="/gallery" ${path === '/gallery' ? 'aria-current="page"' : ''}>Gallery</a>
+    </nav>
+  </header>`;
 }
 function footer() {
-  return `<footer class="site-footer section-shell"><div class="footer-top"><a class="wordmark" href="/">${esc(data.settings.name)}</a><p>${esc(data.settings.tagline)}</p><div>${data.settings.instagram ? `<a href="${esc(data.settings.instagram)}" target="_blank" rel="noreferrer">Instagram ↗</a>` : ''}${data.settings.email ? `<a href="mailto:${esc(data.settings.email)}">Say hello ↗</a>` : ''}</div></div><div class="footer-bottom"><span>© ${new Date().getFullYear()} ${esc(data.settings.name)} A little care goes a long way.</span><a href="/admin">Studio login <span aria-hidden="true">↗</span></a></div></footer>`;
+  return `<footer class="site-footer section-shell">
+    <span>© ${new Date().getFullYear()} ${esc(data.settings.name)}</span>
+    <div>${data.settings.email ? `<a href="mailto:${esc(data.settings.email)}">Contact</a>` : ''}${data.settings.instagram ? `<a href="${esc(data.settings.instagram)}" target="_blank" rel="noreferrer">Instagram</a>` : ''}<a href="/admin">Admin login</a></div>
+  </footer>`;
 }
 export async function refreshData() { data = await api('/api/public'); return data; }
 export function navigate(path) { history.pushState({}, '', path); render(); window.scrollTo({ top: 0, behavior: 'instant' }); }
@@ -25,14 +35,13 @@ async function render() {
     if (!robots) { robots = document.createElement('meta'); robots.name = 'robots'; document.head.append(robots); }
     robots.content = ['/admin', '/booking'].includes(path) ? 'noindex, nofollow' : 'index, follow';
     app.innerHTML = `${header(path)}<main id="main" tabindex="-1">${path === '/' ? home(data) : path === '/gallery' ? galleryPage(data) : ''}</main>${footer()}`;
-    $('.menu-button').addEventListener('click', (event) => { const button = event.currentTarget; const expanded = button.getAttribute('aria-expanded') === 'true'; button.setAttribute('aria-expanded', String(!expanded)); button.setAttribute('aria-label', expanded ? 'Open menu' : 'Close menu'); $('#mobile-nav').hidden = expanded; });
     if (path === '/gallery') mountGallery(data);
     if (path === '/schedule') mountScheduler(data, navigate);
     if (path === '/booking') await mountConfirmation(data, navigate);
     if (path === '/admin') await mountAdmin(data, { navigate, refreshData });
     imageEvents();
   } catch (error) {
-    app.innerHTML = `<main id="main" class="centered-state section-shell"><p class="eyebrow">LET’S TRY THAT AGAIN</p><h1>A little hiccup.</h1><p>${esc(error.message)}</p><button class="button primary" id="retry-page">Try again</button></main>`;
+    app.innerHTML = `<main id="main" class="centered-state section-shell"><h1>Unable to load the page</h1><p>${esc(error.message)}</p><button class="button primary" id="retry-page">Try again</button></main>`;
     $('#retry-page').addEventListener('click', render);
   }
 }
