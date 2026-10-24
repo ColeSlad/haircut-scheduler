@@ -61,13 +61,14 @@ test('public data excludes appointments, login credentials, and tokens', async (
   const { request } = await fixture(t);
   const result = await request('/api/public');
   assert.equal(result.status, 200);
-  assert.deepEqual(Object.keys(result.body).sort(), ['gallery', 'hours', 'services', 'settings']);
+  assert.deepEqual(Object.keys(result.body).sort(), ['gallery', 'hours', 'services', 'settings', 'videos']);
   assert.equal(result.headers['cache-control'], 'no-store');
 });
 test('private admin endpoints and mutations require authentication', async (t) => {
   const { request } = await fixture(t);
-  for (const path of ['/api/admin/data', '/api/admin/settings', '/api/admin/gallery']) assert.equal((await request(path)).status, 401);
+  for (const path of ['/api/admin/data', '/api/admin/settings', '/api/admin/gallery', '/api/admin/videos']) assert.equal((await request(path)).status, 401);
   assert.equal((await request('/api/admin/settings', { method: 'PUT', body: {} })).status, 401);
+  assert.equal((await request('/api/admin/videos', { method: 'PUT', body: { videos: [] } })).status, 401);
 });
 test('login creates an HttpOnly session and logout revokes it', async (t) => {
   const { request } = await fixture(t);
@@ -191,6 +192,24 @@ test('admin can cancel appointments without exposing management tokens', async (
   assert.equal(data.body.bookings[0].token_hash, undefined);
   assert.equal((await request(`/api/admin/bookings/${booked.id}`, { method: 'PATCH', headers, body: { status: 'completed' } })).status, 400);
   assert.equal((await request(`/api/admin/bookings/${booked.id}`, { method: 'PATCH', headers, body: { status: 'cancelled' } })).status, 200);
+});
+test('admin can curate TikTok videos with validated links and public ordering', async (t) => {
+  const { request, login } = await fixture(t);
+  const headers = { cookie: await login() };
+  const video = { title: 'Fresh haircut', url: 'https://tiktok.com/@l2cuts/video/7700290410312142093?is_from_webapp=1' };
+  const second = { title: 'Another haircut', url: 'https://www.tiktok.com/@l2cuts/video/7698458409233878285' };
+  assert.equal((await request('/api/admin/videos', { method: 'PUT', headers, body: { videos: [second, video] } })).status, 200);
+  const saved = (await request('/api/public')).body.videos;
+  assert.deepEqual(saved.map((item) => item.title), ['Another haircut', 'Fresh haircut']);
+  assert.equal(saved[1].url, 'https://www.tiktok.com/@l2cuts/video/7700290410312142093');
+  const invalidUrls = ['javascript:alert(1)', 'https://example.com/@l2cuts/video/7700290410312142093', 'https://www.tiktok.com.evil.example/@l2cuts/video/7700290410312142093', 'https://www.tiktok.com/@other/video/7700290410312142093', 'https://www.tiktok.com/@l2cuts', 'https://www.tiktok.com:444/@l2cuts/video/7700290410312142093'];
+  for (const url of invalidUrls) assert.equal((await request('/api/admin/videos', { method: 'PUT', headers, body: { videos: [{ ...video, url }] } })).status, 400);
+  for (const videos of [[video, video], [{ ...video, title: '' }], [null], Array(31).fill(video)]) {
+    assert.equal((await request('/api/admin/videos', { method: 'PUT', headers, body: { videos } })).status, 400);
+  }
+  assert.deepEqual((await request('/api/public')).body.videos, saved);
+  assert.equal((await request('/api/admin/videos', { method: 'PUT', headers, body: { videos: [] } })).status, 200);
+  assert.deepEqual((await request('/api/public')).body.videos, []);
 });
 test('static routing does not expose server files, databases, or environment files', async (t) => {
   const { request } = await fixture(t);

@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { publicData, settings } from './store.js';
 import { HttpError, availableSlots, createBooking, tokenHash, textField, validDate, validTime, minutes } from './scheduling.js';
 import { createSession, requireAdmin, sessionCookie, verifyPassword } from './auth.js';
+import { tiktokVideoUrl } from './videos.js';
 
 const categories = ['Short cuts', 'Texture', 'Beards', 'Long cuts'];
 export function createApi(db, { origin, secure, dataDir }) {
@@ -110,6 +111,30 @@ export function createApi(db, { origin, secure, dataDir }) {
           for (const row of hours) db.prepare('UPDATE hours SET enabled = ?, start = ?, end = ? WHERE day = ?').run(row.enabled, row.start, row.end, row.day);
           db.exec('DELETE FROM days_off');
           for (const row of daysOff) db.prepare('INSERT INTO days_off VALUES (?, ?)').run(row.date, row.note || '');
+          db.exec('COMMIT');
+        } catch (error) { db.exec('ROLLBACK'); throw error; }
+        return json({ ok: true });
+      }
+      if (path === '/api/admin/videos' && method === 'PUT') {
+        const { videos } = await readJson(req);
+        if (!Array.isArray(videos) || videos.length > 30) throw new HttpError(400, 'Keep up to 30 TikTok videos.');
+        const ids = new Set();
+        const urls = new Set();
+        const rows = videos.map((video, position) => {
+          if (!video || typeof video !== 'object') throw new HttpError(400, 'Enter valid TikTok video details.');
+          const id = video.id || randomUUID();
+          if (typeof id !== 'string' || id.length > 80 || ids.has(id)) throw new HttpError(400, 'Invalid video ID.');
+          ids.add(id);
+          const title = textField(video.title, 'video title', 100);
+          const url = tiktokVideoUrl(video.url);
+          if (urls.has(url)) throw new HttpError(400, 'This TikTok video was added twice.');
+          urls.add(url);
+          return [id, title, url, position];
+        });
+        db.exec('BEGIN IMMEDIATE');
+        try {
+          db.exec('DELETE FROM videos');
+          for (const row of rows) db.prepare('INSERT INTO videos VALUES (?, ?, ?, ?)').run(...row);
           db.exec('COMMIT');
         } catch (error) { db.exec('ROLLBACK'); throw error; }
         return json({ ok: true });

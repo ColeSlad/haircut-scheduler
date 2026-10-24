@@ -44,6 +44,9 @@ export function openStore(file = resolve(process.env.DATA_DIR || 'data', 'schedu
       id TEXT PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL, image TEXT NOT NULL,
       alt TEXT NOT NULL, sample INTEGER NOT NULL DEFAULT 0, position INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS videos (
+      id TEXT PRIMARY KEY, title TEXT NOT NULL, url TEXT NOT NULL UNIQUE, position INTEGER NOT NULL
+    );
   `);
   if (!db.prepare('SELECT id FROM settings').get()) {
     db.prepare('INSERT INTO settings VALUES (1, ?)').run(JSON.stringify(defaults));
@@ -66,6 +69,16 @@ export function openStore(file = resolve(process.env.DATA_DIR || 'data', 'schedu
       db.exec('COMMIT');
     } catch (error) { db.exec('ROLLBACK'); db.close(); throw error; }
   }
+  if (db.prepare('PRAGMA user_version').get().user_version < 2) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const insert = db.prepare('INSERT OR IGNORE INTO videos VALUES (?, ?, ?, ?)');
+      ['7700290410312142093', '7698458409233878285', '7698090850827390221'].forEach((id, position) => {
+        insert.run(`tiktok-${id}`, `TikTok video ${position + 1}`, `https://www.tiktok.com/@l2cuts/video/${id}`, position);
+      });
+      db.exec('PRAGMA user_version = 2; COMMIT;');
+    } catch (error) { db.exec('ROLLBACK'); db.close(); throw error; }
+  }
   return db;
 }
 
@@ -79,5 +92,6 @@ export function publicData(db) {
     services: db.prepare("SELECT * FROM services WHERE id = 'haircut' AND active = 1").all(),
     hours: db.prepare('SELECT * FROM hours ORDER BY day').all(),
     gallery: db.prepare('SELECT * FROM gallery ORDER BY position').all(),
+    videos: db.prepare('SELECT * FROM videos ORDER BY position').all(),
   };
 }

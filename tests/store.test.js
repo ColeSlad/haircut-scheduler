@@ -39,3 +39,15 @@ test('existing service menus migrate once without changing bookings or haircut p
   assert.equal(publicData(db).services[0].price, 6100);
   assert.deepEqual(db.prepare('SELECT * FROM bookings WHERE id = ?').get(booking.id), original);
 });
+
+test('TikTok videos are seeded once and admin removal survives reopening', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'haircut-video-migration-'));
+  const file = join(directory, 'scheduler.sqlite');
+  let db = openStore(file);
+  t.after(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
+  assert.equal(publicData(db).videos.length, 3);
+  db.exec('DELETE FROM videos');
+  db.close();
+  db = openStore(file);
+  assert.deepEqual(publicData(db).videos, []);
+});
