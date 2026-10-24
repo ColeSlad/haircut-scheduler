@@ -77,21 +77,11 @@ main { flex: 1; }
 /* Home and gallery. */
 .page-intro, .booking-intro { padding-block: 40px 28px; }
 .page-intro > p, .booking-intro > p { margin-top: 12px; }
-.home-intro { padding-bottom: 40px; }
+.home-intro { padding-bottom: 48px; }
 .home-intro > p { max-width: 600px; }
+.home-intro > .home-price { margin-top: 20px; font-size: 18px; color: var(--ink); }
+.home-intro > .fine-print { margin-top: 16px; }
 .page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; margin-top: 24px; }
-.home-details { display: grid; grid-template-columns: 1.2fr 1fr; gap: 64px; padding-bottom: 48px; }
-.home-details h2 { margin-bottom: 16px; }
-.service-list { margin: 0; padding: 0; list-style: none; }
-.service-list li { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 16px 0; border-bottom: 1px solid var(--line); }
-.service-list li:first-child { padding-top: 0; }
-.service-list h3 { font-size: 16px; }
-.service-list p { font-size: 14px; margin-top: 5px; }
-.services-section > .fine-print { margin-top: 16px; }
-.visit-details > p { font-size: 14px; }
-.hours-list { margin: 20px 0 12px; font-size: 14px; }
-.hours-list > div { display: flex; justify-content: space-between; gap: 16px; padding-block: 4px; }
-.hours-list dd { margin: 0; white-space: nowrap; }
 .gallery-section { padding-bottom: 48px; }
 .gallery-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; }
 .gallery-section > .filter-row { margin-top: 20px; }
@@ -288,7 +278,6 @@ code { font-family: monospace; background: var(--soft); padding: 2px 4px; font-s
 @media (max-width: 900px) {
   .booking-layout { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .booking-summary { max-width: 500px; }
-  .home-details { gap: 40px; }
 }
 
 @media (max-width: 640px) {
@@ -301,8 +290,6 @@ code { font-family: monospace; background: var(--soft); padding: 2px 4px; font-s
   .page-intro, .booking-intro { padding-block: 28px 24px; }
   .page-intro > p, .booking-intro > p { font-size: 15px; }
   .home-intro { padding-bottom: 32px; }
-  .home-details { grid-template-columns: minmax(0, 1fr); gap: 32px; padding-bottom: 36px; }
-  .hours-list { max-width: 400px; }
   .work-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 16px; }
   .video-grid { grid-template-columns: minmax(0, 1fr); max-width: 400px; margin-inline: auto; gap: 28px; }
   .work-caption h3 { font-size: 14px; }

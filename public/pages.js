@@ -1,4 +1,4 @@
-import { esc, money, timeLabel, dayNames, imageEvents, $, $$ } from './shared.js?v=7';
+import { esc, money, imageEvents, $, $$ } from './shared.js?v=8';
 
 const photos = [
   'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?auto=format&fit=crop&w=800&q=85',
@@ -19,30 +19,15 @@ export function galleryCard(item) {
 }
 
 export function home(data) {
-  const { settings: s, services, hours } = data;
+  const { settings: s, services } = data;
+  const [haircut] = services;
   return `<section class="section-shell page-intro home-intro">
-    <h1>Haircuts by appointment</h1>
+    <h1>Haircuts</h1>
     <p>${esc(s.description)}</p>
-    <div class="page-actions"><a class="button primary" href="/schedule">Book a cut</a><a class="text-link" href="/gallery">View gallery</a></div>
-  </section>
-  <div class="section-shell home-details">
-    <section class="services-section" id="services">
-      <h2>Haircut</h2>
-      <ul class="service-list">${services.map((service) => `<li>
-        <div><h3>${esc(service.name)}</h3><p>${service.duration} minutes · ${money(service.price)}</p></div>
-        <a class="text-link" href="/schedule" aria-label="Book ${esc(service.name)}">Book</a>
-      </li>`).join('')}</ul>
-      <p class="fine-print">Payment is taken at your appointment.</p>
-    </section>
-    <section class="visit-details">
-      <h2>Location &amp; hours</h2>
-      <p>${esc(s.location)}</p>
-      ${s.address ? `<p>${esc(s.address)}</p>` : ''}
-      <dl class="hours-list">${hours.filter((day) => day.enabled).map((day) => `<div><dt>${dayNames[day.day]}</dt><dd>${timeLabel(day.start)} – ${timeLabel(day.end)}</dd></div>`).join('')}</dl>
-      <p class="fine-print">${esc(s.timezone.replaceAll('_', ' '))}</p>
-      ${s.phone ? `<p><a href="tel:${esc(s.phone)}">${esc(s.phone)}</a></p>` : ''}
-    </section>
-  </div>`;
+    ${haircut ? `<p class="home-price">${haircut.duration} min · ${money(haircut.price)}</p>` : ''}
+    <div class="page-actions"><a class="button primary" href="/schedule">Book a cut</a><a class="text-link" href="/gallery">Gallery</a></div>
+    ${haircut ? '<p class="fine-print">Pay at your appointment.</p>' : ''}
+  </section>`;
 }
 
 export function galleryPage(data) {

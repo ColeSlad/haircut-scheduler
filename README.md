@@ -22,7 +22,7 @@ A new email adds an admin; entering an existing email resets only that accountâ€
 
 ## Whatâ€™s included
 
-- **Landing page** (`/`): a short introduction, booking link, haircut price, location, and hours.
+- **Landing page** (`/`): a short introduction, haircut price/duration, booking button, and gallery link.
 - **Booking** (`/schedule`): choose an available date/time, then enter your first name, last name, and phone number. No email address or notes are collected. Prices are in USD, with payment at the appointment.
 - **Confirmation** (`/booking#private-token`): appointment details, a private cancellation link, and an `.ics` calendar download. The token stays in the URL fragment rather than server access logs.
 - **Gallery** (`/gallery`): playable TikTok videos from [@l2cuts](https://www.tiktok.com/@l2cuts), photo categories, sample-image labeling, and responsive layouts.
