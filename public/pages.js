@@ -1,29 +1,68 @@
-import { esc, money, arrow, scissors, spark, smallIcon, timeLabel, dayNames, imageEvents, $, $$ } from './shared.js?v=2';
+import { esc, money, timeLabel, dayNames, imageEvents, $, $$ } from './shared.js?v=2';
 
-const studioPhoto = 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=1400&q=85';
 const photos = [
   'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?auto=format&fit=crop&w=800&q=85',
   'https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&w=800&q=85',
   'https://images.unsplash.com/photo-1622296089863-eb7fc530daa8?auto=format&fit=crop&w=800&q=85',
 ];
-export function galleryImage(item) { const sample = /^\/assets\/cut-([1-3])\.jpg$/.exec(item.image); return sample ? photos[Number(sample[1]) - 1] : item.image; }
-export function galleryCard(item, index = 0) { return `<article class="work-card"><div class="work-photo"><img src="${esc(galleryImage(item))}" alt="${esc(item.alt)}" loading="lazy"><span class="photo-index">${String(index + 1).padStart(2, '0')}</span>${item.sample ? '<span class="sample-pill">Style inspiration</span>' : ''}</div><div class="work-caption"><h3>${esc(item.title)}</h3><span>${esc(item.category)}</span></div></article>`; }
+
+export function galleryImage(item) {
+  const sample = /^\/assets\/cut-([1-3])\.jpg$/.exec(item.image);
+  return sample ? photos[Number(sample[1]) - 1] : item.image;
+}
+
+export function galleryCard(item) {
+  return `<article class="work-card">
+    <div class="work-photo"><img src="${esc(galleryImage(item))}" alt="${esc(item.alt)}" loading="lazy"></div>
+    <div class="work-caption"><h3>${esc(item.title)}</h3><p>${esc(item.category)}${item.sample ? ' · Sample photo' : ''}</p></div>
+  </article>`;
+}
+
 export function home(data) {
-  const { settings: s, services, hours, gallery } = data;
-  return `<section class="hero section-shell"><div class="hero-copy"><p class="eyebrow"><span class="status-dot"></span> ONE BARBER. YOUR TIME.</p><h1>A good cut.<br>A <span class="serif-word">better</span> day.</h1><p class="hero-description">${esc(s.description)}</p><div class="hero-actions"><a class="button primary" href="/schedule">Find your next cut ${arrow}</a><a class="text-link" href="/gallery">Take a look around <span>↗</span></a></div><div class="hero-note">${smallIcon('calendar')} By appointment. Always personal.</div></div><div class="hero-visual"><img class="hero-image" src="${studioPhoto}" alt="Stock studio inspiration: a warm barber shop with leather chairs"><span class="image-label">THE CHAIR IS YOURS.</span><div class="round-stamp">${spark}<span>LOOK GOOD.<br>FEEL LIKE YOU.</span></div><div class="hero-photo-footer"><span>Good things take a little time.</span>${scissors}</div></div></section>
-  <div class="brand-strip"><span>${spark} GOOD HAIR.</span><span>${spark} GOOD COMPANY.</span><span>${spark} YOUR KIND OF PLACE.</span><span class="strip-extra">${spark} GOOD HAIR.</span></div>
-  <section class="section-shell services-section" id="services"><div class="section-heading"><div><p class="eyebrow">THE MENU</p><h2>Fresh starts here.</h2></div><p>A few things, done with care.<br>Pick what feels right for you.</p></div><div class="service-grid">${services.map((s, i) => `<a class="service-card" href="/schedule?service=${encodeURIComponent(s.id)}"><div class="service-top"><span class="service-number">0${i + 1}</span>${scissors}</div><h3>${esc(s.name)}</h3><p>${esc(s.description)}</p><div class="service-bottom"><span>${money(s.price)} <small>/ ${s.duration} min</small></span><span class="circle-arrow">${arrow}</span></div></a>`).join('')}</div><p class="fine-print">Your time is reserved just for you. Payment is taken at your appointment.</p></section>
-  <section class="studio-section section-shell"><div class="studio-illustration"><div class="arch"><div class="mirror"><span>YOU LOOK<br><em>good.</em></span></div><div class="chair-back"></div><div class="chair-seat"></div><div class="chair-base"></div></div><span class="studio-caption">A LITTLE OFF THE TOP. A LITTLE TIME FOR YOU.</span></div><div class="studio-copy"><p class="eyebrow">MORE THAN A QUICK TRIM</p><h2>One chair.<br>All the attention.</h2><p>${esc(s.tagline)} This is a space to slow down, talk through your next look, and get a cut that works for your everyday.</p><p>No accounts to make. No calls to squeeze in. Just choose a service, find your time, and we’ll see you in the chair.</p><a class="text-link" href="/schedule">Make some time for yourself ${arrow}</a></div></section>
-  <section class="section-shell work-section"><div class="section-heading"><div><p class="eyebrow">A LITTLE INSPIRATION</p><h2>Find your next look.</h2></div><a class="text-link" href="/gallery">Explore the gallery ${arrow}</a></div>${gallery.length ? `<div class="work-grid">${gallery.slice(0, 3).map(galleryCard).join('')}</div>` : '<div class="empty-state">Fresh work is on the way. Bring your inspiration to your appointment.</div>'}${gallery.some((g) => g.sample) ? '<p class="fine-print">Sample images for style inspiration. The studio’s own work will be added here.</p>' : ''}</section>
-  <section class="visit-section section-shell"><div><p class="eyebrow">COME AS YOU ARE</p><h2>Your next good<br>hair day is waiting.</h2><a class="button light" href="/schedule">Let’s get you booked ${arrow}</a></div><div class="visit-details"><div>${smallIcon('pin')}<div><h3>Find the studio</h3><p>${esc(s.location)}</p>${s.address ? `<p>${esc(s.address)}</p>` : '<p class="muted-light">Exact address shared by the studio.</p>'}</div></div><div>${smallIcon('clock')}<div><h3>Studio hours</h3>${hours.filter((h) => h.enabled).map((h) => `<p class="hours-line"><span>${dayNames[h.day]}</span><span>${timeLabel(h.start)} – ${timeLabel(h.end)}</span></p>`).join('')}<p class="timezone-note">${esc(s.timezone.replaceAll('_', ' '))} · By appointment</p>${s.phone ? `<p class="studio-contact"><a href="tel:${esc(s.phone)}">${esc(s.phone)}</a></p>` : ''}</div></div></div></section>`;
+  const { settings: s, services, hours } = data;
+  return `<section class="section-shell page-intro home-intro">
+    <h1>Haircuts by appointment</h1>
+    <p>${esc(s.description)}</p>
+    <div class="page-actions"><a class="button primary" href="/schedule">Book a cut</a><a class="text-link" href="/gallery">View gallery</a></div>
+  </section>
+  <div class="section-shell home-details">
+    <section class="services-section" id="services">
+      <h2>Services</h2>
+      <ul class="service-list">${services.map((service) => `<li>
+        <div><h3>${esc(service.name)}</h3><p>${service.duration} minutes · ${money(service.price)}</p></div>
+        <a class="text-link" href="/schedule?service=${encodeURIComponent(service.id)}" aria-label="Book ${esc(service.name)}">Book</a>
+      </li>`).join('')}</ul>
+      <p class="fine-print">Payment is taken at your appointment.</p>
+    </section>
+    <section class="visit-details">
+      <h2>Location &amp; hours</h2>
+      <p>${esc(s.location)}</p>
+      ${s.address ? `<p>${esc(s.address)}</p>` : ''}
+      <dl class="hours-list">${hours.filter((day) => day.enabled).map((day) => `<div><dt>${dayNames[day.day]}</dt><dd>${timeLabel(day.start)} – ${timeLabel(day.end)}</dd></div>`).join('')}</dl>
+      <p class="fine-print">${esc(s.timezone.replaceAll('_', ' '))}</p>
+      ${s.phone ? `<p><a href="tel:${esc(s.phone)}">${esc(s.phone)}</a></p>` : ''}
+    </section>
+  </div>`;
 }
+
 export function galleryPage(data) {
-  const actual = data.gallery.filter((item) => !item.sample);
-  return `<section class="section-shell page-intro"><p class="eyebrow">THE GALLERY</p><div class="gallery-intro"><h1>Good hair.<br><span class="serif-word">Every angle.</span></h1><p>A little inspiration for your next visit.<br>Find a look you like, then make it your own.</p></div></section><section class="section-shell gallery-section"><div class="filter-row" role="group" aria-label="Filter gallery"><button class="filter active" data-filter="All" aria-pressed="true">All looks <span>${data.gallery.length}</span></button>${[...new Set(data.gallery.map((g) => g.category))].map((category) => `<button class="filter" data-filter="${esc(category)}" aria-pressed="false">${esc(category)}</button>`).join('')}</div>${data.gallery.some((item) => item.sample) ? `<div class="inspiration-note">${smallIcon('calendar')} ${actual.length ? 'Photos marked “Style inspiration” are sample images.' : 'The studio’s portfolio is coming soon. These sample images are here for style inspiration.'}</div>` : ''}<div class="work-grid gallery-grid" id="gallery-grid">${data.gallery.length ? data.gallery.map(galleryCard).join('') : '<div class="empty-state">The gallery is getting a fresh look. Check back soon.</div>'}</div></section><section class="small-cta section-shell"><div><p class="eyebrow">FOUND YOUR LOOK?</p><h2>Let’s make it yours.</h2></div><a class="button primary" href="/schedule">Book your appointment ${arrow}</a></section>`;
+  return `<section class="section-shell page-intro"><h1>Gallery</h1></section>
+    <section class="section-shell gallery-section">
+      ${data.gallery.length ? `<div class="filter-row" role="group" aria-label="Filter gallery">
+        <button class="filter active" data-filter="All" aria-pressed="true">All photos</button>
+        ${[...new Set(data.gallery.map((item) => item.category))].map((category) => `<button class="filter" data-filter="${esc(category)}" aria-pressed="false">${esc(category)}</button>`).join('')}
+      </div>` : ''}
+      ${data.gallery.some((item) => item.sample) ? '<p class="gallery-note">Photos marked as samples are style inspiration, not the studio’s own work.</p>' : ''}
+      <div class="work-grid gallery-grid" id="gallery-grid">${data.gallery.length ? data.gallery.map(galleryCard).join('') : '<p class="empty-state">No photos yet.</p>'}</div>
+    </section>`;
 }
+
 export function mountGallery(data) {
   $$('[data-filter]').forEach((button) => button.addEventListener('click', () => {
-    $$('[data-filter]').forEach((item) => { item.classList.toggle('active', item === button); item.setAttribute('aria-pressed', String(item === button)); });
+    $$('[data-filter]').forEach((item) => {
+      item.classList.toggle('active', item === button);
+      item.setAttribute('aria-pressed', String(item === button));
+    });
     const items = data.gallery.filter((item) => button.dataset.filter === 'All' || item.category === button.dataset.filter);
     $('#gallery-grid').innerHTML = items.map(galleryCard).join('');
     imageEvents($('#gallery-grid'));
