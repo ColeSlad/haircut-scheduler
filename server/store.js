@@ -39,7 +39,7 @@ export function openStore(file = resolve(process.env.DATA_DIR || 'data', 'schedu
     );
     CREATE INDEX IF NOT EXISTS booking_times ON bookings(starts_at, ends_at, status);
     CREATE TABLE IF NOT EXISTS admin (id INTEGER PRIMARY KEY CHECK(id = 1), email TEXT NOT NULL, password_hash TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL, auth_key TEXT NOT NULL DEFAULT '');
     CREATE TABLE IF NOT EXISTS gallery (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL, image TEXT NOT NULL,
       alt TEXT NOT NULL, sample INTEGER NOT NULL DEFAULT 0, position INTEGER NOT NULL

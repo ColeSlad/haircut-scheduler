@@ -14,9 +14,15 @@ export async function verifyPassword(password, stored) {
   const expected = Buffer.from(hex, 'hex');
   return key.length === expected.length && timingSafeEqual(key, expected);
 }
+export function passwordAuthKey(db) {
+  const admin = db.prepare('SELECT email, password_hash FROM admin WHERE id = 1').get();
+  return tokenHash(admin ? `password:${admin.email}:${admin.password_hash}` : 'unconfigured');
+}
+export function readCookie(req, name) {
+  return (req.headers.cookie || '').split(';').map((item) => item.trim()).find((item) => item.startsWith(`${name}=`))?.slice(name.length + 1) || '';
+}
 export function requireAdmin(db, req, authKey = '') {
-  const cookie = (req.headers.cookie || '').split(';').map((item) => item.trim()).find((item) => item.startsWith('session='));
-  const token = cookie?.slice(8) || '';
+  const token = readCookie(req, 'session');
   const session = db.prepare('SELECT * FROM sessions WHERE token_hash = ? AND expires_at > ? AND auth_key = ?').get(tokenHash(token), Date.now(), authKey);
   if (!session) throw new HttpError(401, 'Please sign in to continue.');
   return tokenHash(token);

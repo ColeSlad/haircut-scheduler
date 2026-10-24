@@ -4,6 +4,7 @@ import { openStore } from '../server/store.js';
 import { createAdminSms } from '../server/admin-sms.js';
 import { createTwilioVerify, normalizeAdminPhone } from '../server/sms.js';
 import { HttpError } from '../server/scheduling.js';
+import { createSession, requireAdmin } from '../server/auth.js';
 
 const phone = '+15551234567';
 function fixture(t, overrides = {}) {
@@ -107,4 +108,14 @@ test('unconfigured providers and delivery failures never create a usable challen
   const failing = createAdminSms(db, { phone, provider: { identity: 'test', send: async () => { throw new HttpError(503, 'Delivery failed'); } } });
   await assert.rejects(failing.requestCode(phone), { status: 503 });
   assert.equal(db.prepare('SELECT count(*) AS count FROM admin_challenges').get().count, 0);
+});
+
+test('sessions cannot survive an admin identity or authentication-method change', (t) => {
+  const { db } = fixture(t);
+  const token = createSession(db, 'original-admin-identity');
+  const req = { headers: { cookie: `session=${token}` } };
+  requireAdmin(db, req, 'original-admin-identity');
+  assert.throws(() => requireAdmin(db, req, 'different-phone-or-login-method'), { status: 401 });
+  db.prepare('UPDATE sessions SET expires_at = 0').run();
+  assert.throws(() => requireAdmin(db, req, 'original-admin-identity'), { status: 401 });
 });

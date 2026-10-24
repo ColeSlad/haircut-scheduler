@@ -10,10 +10,10 @@ import { hashPassword, verifyPassword } from '../server/auth.js';
 import { availableSlots, createBooking, localParts } from '../server/scheduling.js';
 const origin = 'http://localhost:3000';
 
-async function fixture(t) {
+async function fixture(t, smsOptions = { phone: '', provider: null }) {
   const db = openStore(':memory:');
   const dataDir = mkdtempSync(join(tmpdir(), 'haircut-test-'));
-  const server = appServer({ db, origin, dataDir });
+  const server = appServer({ db, origin, dataDir, smsOptions });
   const password = ' secure-test-password ';
   db.prepare('INSERT INTO admin VALUES (1, ?, ?)').run('admin@example.com', await hashPassword(password));
   t.after(() => { db.close(); rmSync(dataDir, { recursive: true, force: true }); });
@@ -79,6 +79,48 @@ test('login creates an HttpOnly session and logout revokes it', async (t) => {
   assert.equal((await request('/api/admin/data', { headers: { cookie } })).status, 200);
   assert.equal((await request('/api/admin/logout', { method: 'POST', body: {}, headers: { cookie } })).status, 200);
   assert.equal((await request('/api/admin/data', { headers: { cookie } })).status, 401);
+});
+test('phone and one-time code create a private session without exposing codes or allowing password bypass', async (t) => {
+  const sent = [];
+  const provider = { identity: 'test-verify', async send(phone) { sent.push(phone); return 'verification-id'; }, async check(sid, code) { return sid === 'verification-id' && code === '123456'; } };
+  const { request, db } = await fixture(t, { phone: '+15551234567', provider });
+  const session = await request('/api/admin/session');
+  assert.equal(session.body.smsReady, true);
+  assert.equal(session.body.passwordAvailable, false);
+  assert(!JSON.stringify(session.body).includes('5551234567'));
+  assert.equal((await request('/api/admin/login', { method: 'POST', body: { email: 'admin@example.com', password: ' secure-test-password ' } })).status, 400);
+  const unknown = await request('/api/admin/request-code', { method: 'POST', body: { phone: '+15557654321' } });
+  assert.equal(unknown.status, 202);
+  assert.deepEqual(sent, []);
+  const result = await request('/api/admin/request-code', { method: 'POST', body: { phone: '(555) 123-4567' } });
+  assert.equal(result.status, 202);
+  assert.deepEqual(result.body, { ok: true, retryAfter: 30 });
+  assert.equal(result.headers['cache-control'], 'no-store');
+  assert.match(result.headers['set-cookie'], /HttpOnly; SameSite=Strict; Path=\/api\/admin; Max-Age=600/);
+  assert.deepEqual(sent, ['+15551234567']);
+  const challenge = result.headers['set-cookie'].split(';')[0];
+  const body = { phone: '+15551234567', code: '123456' };
+  assert.equal((await request('/api/admin/verify-code', { method: 'POST', body })).status, 401);
+  assert.equal((await request('/api/admin/verify-code', { method: 'POST', headers: { cookie: challenge }, body: { ...body, code: '999999' } })).status, 401);
+  const verified = await request('/api/admin/verify-code', { method: 'POST', headers: { cookie: challenge }, body });
+  assert.equal(verified.status, 200);
+  assert.deepEqual(verified.body, { authenticated: true });
+  const cookie = verified.headers['set-cookie'].find((value) => value.startsWith('session=')).split(';')[0];
+  assert.equal((await request('/api/admin/data', { headers: { cookie } })).status, 200);
+  assert.equal((await request('/api/admin/verify-code', { method: 'POST', headers: { cookie: challenge }, body })).status, 401);
+  assert.equal((await request('/api/admin/logout', { method: 'POST', body: {}, headers: { cookie } })).status, 200);
+  assert.equal((await request('/api/admin/data', { headers: { cookie } })).status, 401);
+  assert.equal(db.prepare('SELECT count(*) AS count FROM admin_challenges').get().count, 0);
+});
+
+test('SMS setup failures, cross-origin requests, and send abuse do not create sessions', async (t) => {
+  const { request } = await fixture(t);
+  assert.equal((await request('/api/admin/request-code', { method: 'POST', body: { phone: '+15551234567' } })).status, 503);
+  assert.equal((await request('/api/admin/session')).body.passwordAvailable, true);
+  assert.equal((await request('/api/admin/request-code', { method: 'POST', body: { phone: '+15551234567' }, headers: { origin: 'https://other.example' } })).status, 403);
+  assert.equal((await request('/api/admin/verify-code', { method: 'POST', body: { phone: '+15551234567', code: '123456' }, headers: { origin: 'https://other.example' } })).status, 403);
+  for (let i = 0; i < 5; i++) await request('/api/admin/request-code', { method: 'POST', body: { phone: '+15557654321' } });
+  assert.equal((await request('/api/admin/request-code', { method: 'POST', body: { phone: '+15557654321' } })).status, 429);
 });
 test('cross-origin and malformed JSON requests are rejected', async (t) => {
   const { request } = await fixture(t);
