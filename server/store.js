@@ -38,7 +38,7 @@ export function openStore(file = resolve(process.env.DATA_DIR || 'data', 'schedu
       status TEXT NOT NULL DEFAULT 'confirmed', token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS booking_times ON bookings(starts_at, ends_at, status);
-    CREATE TABLE IF NOT EXISTS admin (id INTEGER PRIMARY KEY CHECK(id = 1), email TEXT NOT NULL, password_hash TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS admin (id INTEGER PRIMARY KEY CHECK(id BETWEEN 1 AND 2), email TEXT NOT NULL COLLATE NOCASE UNIQUE, password_hash TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL, auth_key TEXT NOT NULL DEFAULT '');
     CREATE TABLE IF NOT EXISTS gallery (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL, image TEXT NOT NULL,
@@ -47,17 +47,9 @@ export function openStore(file = resolve(process.env.DATA_DIR || 'data', 'schedu
     CREATE TABLE IF NOT EXISTS videos (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, url TEXT NOT NULL UNIQUE, position INTEGER NOT NULL
     );
-    CREATE TABLE IF NOT EXISTS admin_challenges (
-      token_hash TEXT PRIMARY KEY, phone TEXT NOT NULL, verification_sid TEXT NOT NULL,
-      auth_key TEXT NOT NULL, expires_at INTEGER NOT NULL, attempts INTEGER NOT NULL, checking INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS admin_code_requests (id INTEGER PRIMARY KEY, requested_at INTEGER NOT NULL, phone_key TEXT NOT NULL DEFAULT '');
   `);
   if (!db.prepare('PRAGMA table_info(sessions)').all().some((column) => column.name === 'auth_key')) {
     db.exec("ALTER TABLE sessions ADD COLUMN auth_key TEXT NOT NULL DEFAULT ''");
-  }
-  if (!db.prepare('PRAGMA table_info(admin_code_requests)').all().some((column) => column.name === 'phone_key')) {
-    db.exec("ALTER TABLE admin_code_requests ADD COLUMN phone_key TEXT NOT NULL DEFAULT ''");
   }
   if (!db.prepare('SELECT id FROM settings').get()) {
     db.prepare('INSERT INTO settings VALUES (1, ?)').run(JSON.stringify(defaults));
@@ -88,6 +80,17 @@ export function openStore(file = resolve(process.env.DATA_DIR || 'data', 'schedu
         insert.run(`tiktok-${id}`, `TikTok video ${position + 1}`, `https://www.tiktok.com/@l2cuts/video/${id}`, position);
       });
       db.exec('PRAGMA user_version = 2; COMMIT;');
+    } catch (error) { db.exec('ROLLBACK'); db.close(); throw error; }
+  }
+  if (db.prepare('PRAGMA user_version').get().user_version < 3) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.exec(`ALTER TABLE admin RENAME TO admin_previous;
+        CREATE TABLE admin (id INTEGER PRIMARY KEY CHECK(id BETWEEN 1 AND 2), email TEXT NOT NULL COLLATE NOCASE UNIQUE, password_hash TEXT NOT NULL);
+        INSERT INTO admin SELECT id, email, password_hash FROM admin_previous;
+        DROP TABLE admin_previous;
+        PRAGMA user_version = 3;
+        COMMIT;`);
     } catch (error) { db.exec('ROLLBACK'); db.close(); throw error; }
   }
   return db;

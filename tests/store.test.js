@@ -69,5 +69,8 @@ test('old session tables migrate without changing an existing admin account', (t
   assert.equal(db.prepare('SELECT password_hash FROM admin WHERE id = 1').get().password_hash, 'existing-password-hash');
   assert.equal(db.prepare('SELECT auth_key FROM sessions').get().auth_key, '');
   assert(db.prepare('PRAGMA table_info(sessions)').all().some((column) => column.name === 'auth_key'));
-  assert.equal(db.prepare('SELECT phone_key FROM admin_code_requests').get().phone_key, '');
+  db.prepare('INSERT INTO admin VALUES (2, ?, ?)').run('second@example.com', 'second-password-hash');
+  assert.equal(db.prepare('SELECT count(*) AS count FROM admin').get().count, 2);
+  assert.throws(() => db.prepare('INSERT INTO admin VALUES (3, ?, ?)').run('third@example.com', 'third-password-hash'));
+  assert.equal(db.prepare('SELECT count(*) AS count FROM admin_code_requests').get().count, 1);
 });

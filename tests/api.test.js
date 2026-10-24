@@ -6,14 +6,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore, publicData, settings } from '../server/store.js';
 import { appServer } from '../server/index.js';
-import { hashPassword, verifyPassword } from '../server/auth.js';
+import { hashPassword, verifyPassword, createOrResetAdmin, createSession } from '../server/auth.js';
 import { availableSlots, createBooking, localParts } from '../server/scheduling.js';
 const origin = 'http://localhost:3000';
 
-async function fixture(t, smsOptions = { phone: '', provider: null }) {
+async function fixture(t) {
   const db = openStore(':memory:');
   const dataDir = mkdtempSync(join(tmpdir(), 'haircut-test-'));
-  const server = appServer({ db, origin, dataDir, smsOptions });
+  const server = appServer({ db, origin, dataDir });
   const password = ' secure-test-password ';
   db.prepare('INSERT INTO admin VALUES (1, ?, ?)').run('admin@example.com', await hashPassword(password));
   t.after(() => { db.close(); rmSync(dataDir, { recursive: true, force: true }); });
@@ -31,8 +31,8 @@ async function fixture(t, smsOptions = { phone: '', provider: null }) {
       try { server.emit('request', req, res); } catch (error) { reject(error); }
     });
   }
-  async function login() {
-    const result = await request('/api/admin/login', { method: 'POST', body: { email: 'admin@example.com', password } });
+  async function login(email = 'admin@example.com', userPassword = password) {
+    const result = await request('/api/admin/login', { method: 'POST', body: { email, password: userPassword } });
     assert.equal(result.status, 200);
     return result.headers['set-cookie'].split(';')[0];
   }
@@ -80,79 +80,44 @@ test('login creates an HttpOnly session and logout revokes it', async (t) => {
   assert.equal((await request('/api/admin/logout', { method: 'POST', body: {}, headers: { cookie } })).status, 200);
   assert.equal((await request('/api/admin/data', { headers: { cookie } })).status, 401);
 });
-test('phone and one-time code create a private session without exposing codes or allowing password bypass', async (t) => {
-  const sent = [];
-  const provider = { identity: 'test-verify', async send(phone) { sent.push(phone); return 'verification-id'; }, async check(sid, code) { return sid === 'verification-id' && code === '123456'; } };
-  const { request, db } = await fixture(t, { phone: '+15551234567', provider });
-  const session = await request('/api/admin/session');
-  assert.equal(session.body.smsReady, true);
-  assert.equal(session.body.passwordAvailable, false);
-  assert(!JSON.stringify(session.body).includes('5551234567'));
-  assert.equal((await request('/api/admin/login', { method: 'POST', body: { email: 'admin@example.com', password: ' secure-test-password ' } })).status, 400);
-  const unknown = await request('/api/admin/request-code', { method: 'POST', body: { phone: '+15557654321' } });
-  assert.equal(unknown.status, 202);
-  assert.deepEqual(sent, []);
-  const result = await request('/api/admin/request-code', { method: 'POST', body: { phone: '(555) 123-4567' } });
-  assert.equal(result.status, 202);
-  assert.deepEqual(result.body, { ok: true, retryAfter: 30 });
-  assert.equal(result.headers['cache-control'], 'no-store');
-  assert.match(result.headers['set-cookie'], /HttpOnly; SameSite=Strict; Path=\/api\/admin; Max-Age=600/);
-  assert.deepEqual(sent, ['+15551234567']);
-  const challenge = result.headers['set-cookie'].split(';')[0];
-  const body = { phone: '+15551234567', code: '123456' };
-  assert.equal((await request('/api/admin/verify-code', { method: 'POST', body })).status, 401);
-  assert.equal((await request('/api/admin/verify-code', { method: 'POST', headers: { cookie: challenge }, body: { ...body, code: '999999' } })).status, 401);
-  const verified = await request('/api/admin/verify-code', { method: 'POST', headers: { cookie: challenge }, body });
-  assert.equal(verified.status, 200);
-  assert.deepEqual(verified.body, { authenticated: true });
-  const cookie = verified.headers['set-cookie'].find((value) => value.startsWith('session=')).split(';')[0];
-  assert.equal((await request('/api/admin/data', { headers: { cookie } })).status, 200);
-  assert.equal((await request('/api/admin/verify-code', { method: 'POST', headers: { cookie: challenge }, body })).status, 401);
-  assert.equal((await request('/api/admin/logout', { method: 'POST', body: {}, headers: { cookie } })).status, 200);
-  assert.equal((await request('/api/admin/data', { headers: { cookie } })).status, 401);
-  assert.equal(db.prepare('SELECT count(*) AS count FROM admin_challenges').get().count, 0);
-});
-
-test('SMS setup failures, cross-origin requests, and send abuse do not create sessions', async (t) => {
-  const { request } = await fixture(t);
-  assert.equal((await request('/api/admin/request-code', { method: 'POST', body: { phone: '+15551234567' } })).status, 503);
-  assert.equal((await request('/api/admin/session')).body.passwordAvailable, true);
-  assert.equal((await request('/api/admin/request-code', { method: 'POST', body: { phone: '+15551234567' }, headers: { origin: 'https://other.example' } })).status, 403);
-  assert.equal((await request('/api/admin/verify-code', { method: 'POST', body: { phone: '+15551234567', code: '123456' }, headers: { origin: 'https://other.example' } })).status, 403);
-  for (let i = 0; i < 10; i++) await request('/api/admin/request-code', { method: 'POST', body: { phone: '+15557654321' } });
-  assert.equal((await request('/api/admin/request-code', { method: 'POST', body: { phone: '+15557654321' } })).status, 429);
-});
-test('two phone admins have full management access and independent logout', async (t) => {
-  const phones = ['+15551234567', '+15557654321'];
-  const codes = ['123456', '654321'];
-  const sent = [];
-  const provider = { identity: 'two-admin-test', async send(phone) { sent.push(phone); return phone; }, async check(sid, code) { return code === codes[phones.indexOf(sid)]; } };
-  const { request, db } = await fixture(t, { phones, provider });
-  const challenges = [];
-  for (const phone of phones) {
-    const result = await request('/api/admin/request-code', { method: 'POST', body: { phone } });
-    assert.equal(result.status, 202);
-    challenges.push(result.headers['set-cookie'].split(';')[0]);
+test('two email admins can manage the app with independent sessions and password resets', async (t) => {
+  const { db, request, login } = await fixture(t);
+  let firstCookie = await login();
+  await createOrResetAdmin(db, 'second@example.com', 'second-test-password');
+  const secondCookie = await login('SECOND@example.com', 'second-test-password');
+  for (const cookie of [firstCookie, secondCookie]) {
+    assert.equal((await request('/api/admin/data', { headers: { cookie } })).status, 200);
+    assert.equal((await request('/api/admin/settings', { method: 'PUT', headers: { cookie }, body: settings(db) })).status, 200);
   }
-  const third = await request('/api/admin/request-code', { method: 'POST', body: { phone: '+15550000000' } });
-  assert.equal(third.status, 202);
-  assert.deepEqual(sent, phones);
-  assert.equal((await request('/api/admin/verify-code', { method: 'POST', headers: { cookie: challenges[0] }, body: { phone: phones[1], code: codes[1] } })).status, 401);
-  const cookies = [];
-  for (let i = 0; i < phones.length; i++) {
-    const verified = await request('/api/admin/verify-code', { method: 'POST', headers: { cookie: challenges[i] }, body: { phone: phones[i], code: codes[i] } });
-    assert.equal(verified.status, 200);
-    const cookie = verified.headers['set-cookie'].find((value) => value.startsWith('session=')).split(';')[0];
-    cookies.push(cookie);
-    assert.equal((await request('/api/admin/settings', { method: 'PUT', headers: { cookie }, body: { ...settings(db), name: `Admin ${i + 1} studio` } })).status, 200);
+  assert.equal((await request('/api/admin/login', { method: 'POST', body: { email: 'unknown@example.com', password: ' secure-test-password ' } })).status, 401);
+  assert.equal((await request('/api/admin/logout', { method: 'POST', headers: { cookie: firstCookie }, body: {} })).status, 200);
+  assert.equal((await request('/api/admin/data', { headers: { cookie: firstCookie } })).status, 401);
+  assert.equal((await request('/api/admin/data', { headers: { cookie: secondCookie } })).status, 200);
+  firstCookie = await login();
+  await createOrResetAdmin(db, 'Second@Example.com', 'updated-test-password');
+  assert.equal((await request('/api/admin/data', { headers: { cookie: secondCookie } })).status, 401);
+  assert.equal((await request('/api/admin/data', { headers: { cookie: firstCookie } })).status, 200);
+  assert.equal((await request('/api/admin/login', { method: 'POST', body: { email: 'second@example.com', password: 'second-test-password' } })).status, 401);
+  await login('second@example.com', 'updated-test-password');
+  await assert.rejects(createOrResetAdmin(db, 'third@example.com', 'third-test-password'), { status: 400 });
+  assert.equal(db.prepare('SELECT count(*) AS count FROM admin').get().count, 2);
+});
+test('admin setup validates email and password without changing existing accounts', async (t) => {
+  const { db } = await fixture(t);
+  const previous = db.prepare('SELECT * FROM admin').get();
+  for (const [email, password] of [['bad-email', 'valid-test-password'], ['other@example.com', 'short'], ['other@example.com', 'x'.repeat(257)]]) {
+    await assert.rejects(createOrResetAdmin(db, email, password), { status: 400 });
   }
-  assert.equal(db.prepare('SELECT count(DISTINCT auth_key) AS count FROM sessions').get().count, 2);
-  for (const cookie of cookies) assert.equal((await request('/api/admin/data', { headers: { cookie } })).status, 200);
-  assert.equal((await request('/api/admin/logout', { method: 'POST', headers: { cookie: cookies[0] }, body: {} })).status, 200);
-  assert.equal((await request('/api/admin/data', { headers: { cookie: cookies[0] } })).status, 401);
-  assert.equal((await request('/api/admin/data', { headers: { cookie: cookies[1] } })).status, 200);
-  const publicResult = JSON.stringify((await request('/api/public')).body);
-  for (const phone of phones) assert(!publicResult.includes(phone));
+  assert.deepEqual(db.prepare('SELECT * FROM admin').get(), previous);
+});
+test('SMS sign-in is removed and old phone sessions cannot access admin data', async (t) => {
+  const { db, request } = await fixture(t);
+  for (const path of ['/api/admin/request-code', '/api/admin/verify-code']) {
+    assert.equal((await request(path, { method: 'POST', body: { phone: '+15551234567', code: '123456' } })).status, 404);
+  }
+  const token = createSession(db, 'old-sms-identity');
+  assert.equal((await request('/api/admin/data', { headers: { cookie: `session=${token}` } })).status, 401);
+  assert.equal((await request('/api/admin/session')).body.configured, true);
 });
 test('cross-origin and malformed JSON requests are rejected', async (t) => {
   const { request } = await fixture(t);

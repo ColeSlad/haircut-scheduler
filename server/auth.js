@@ -14,9 +14,25 @@ export async function verifyPassword(password, stored) {
   const expected = Buffer.from(hex, 'hex');
   return key.length === expected.length && timingSafeEqual(key, expected);
 }
-export function passwordAuthKey(db) {
-  const admin = db.prepare('SELECT email, password_hash FROM admin WHERE id = 1').get();
-  return tokenHash(admin ? `password:${admin.email}:${admin.password_hash}` : 'unconfigured');
+export const passwordAuthKey = (admin) => tokenHash(`password:${admin.email}:${admin.password_hash}`);
+export const passwordAuthKeys = (db) => db.prepare('SELECT email, password_hash FROM admin').all().map(passwordAuthKey);
+
+export async function createOrResetAdmin(db, email, password) {
+  if (typeof email !== 'string' || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) throw new HttpError(400, 'Enter a valid email address.');
+  email = email.trim().toLowerCase();
+  if (typeof password !== 'string' || password.length < 12 || password.length > 256) throw new HttpError(400, 'Use a password between 12 and 256 characters.');
+  const hash = await hashPassword(password);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const existing = db.prepare('SELECT * FROM admin WHERE email = ?').get(email);
+    const ids = db.prepare('SELECT id FROM admin').all().map((row) => row.id);
+    const id = existing?.id || [1, 2].find((value) => !ids.includes(value));
+    if (!id) throw new HttpError(400, 'Both admin accounts are configured. Enter an existing admin email to reset its password.');
+    db.prepare('INSERT INTO admin VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET email = excluded.email, password_hash = excluded.password_hash').run(id, email, hash);
+    if (existing) db.prepare('DELETE FROM sessions WHERE auth_key = ?').run(passwordAuthKey(existing));
+    db.exec('COMMIT');
+    return { id, email };
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
 }
 export function readCookie(req, name) {
   return (req.headers.cookie || '').split(';').map((item) => item.trim()).find((item) => item.startsWith(`${name}=`))?.slice(name.length + 1) || '';

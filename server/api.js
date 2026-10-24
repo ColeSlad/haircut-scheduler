@@ -3,14 +3,13 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { publicData, settings } from './store.js';
 import { HttpError, availableSlots, createBooking, tokenHash, textField, validDate, validTime, minutes } from './scheduling.js';
-import { createSession, requireAdmin, sessionCookie, verifyPassword, passwordAuthKey, readCookie } from './auth.js';
-import { challengeCookie } from './admin-sms.js';
+import { createSession, requireAdmin, sessionCookie, verifyPassword, passwordAuthKey, passwordAuthKeys } from './auth.js';
 import { tiktokVideoUrl } from './videos.js';
 
 const categories = ['Short cuts', 'Texture', 'Beards', 'Long cuts'];
-export function createApi(db, { origin, secure, dataDir, sms }) {
+export function createApi(db, { origin, secure, dataDir }) {
   const limits = new Map();
-  const authKeys = () => sms.configured ? sms.authKeys : [passwordAuthKey(db)];
+  const authKeys = () => passwordAuthKeys(db);
   function rateLimit(req, kind, max, duration) {
     const key = `${kind}:${req.socket.remoteAddress}`;
     const now = Date.now();
@@ -59,37 +58,26 @@ export function createApi(db, { origin, secure, dataDir, sms }) {
     if (path === '/api/admin/session' && method === 'GET') {
       let authenticated = false;
       try { requireAdmin(db, req, authKeys()); authenticated = true; } catch { /* Visitor is signed out. */ }
-      const passwordAvailable = !sms.configured && Boolean(db.prepare('SELECT id FROM admin').get());
-      return json({ authenticated, configured: sms.configured || passwordAvailable, smsReady: sms.configured, passwordAvailable });
+      return json({ authenticated, configured: Boolean(db.prepare('SELECT id FROM admin LIMIT 1').get()) });
     }
-    if (path === '/api/admin/request-code' && method === 'POST') {
-      rateLimit(req, 'code-send', 10, 15 * 60_000);
-      const input = await readJson(req);
-      const result = await sms.requestCode(input.phone);
-      return json({ ok: true, retryAfter: result.retryAfter }, 202, { 'Set-Cookie': challengeCookie(result.token, secure) });
-    }
-    if (path === '/api/admin/verify-code' && method === 'POST') {
-      rateLimit(req, 'code-check', 10, 15 * 60_000);
-      const input = await readJson(req);
-      const key = await sms.verifyCode(input.phone, input.code, readCookie(req, 'admin_challenge'));
-      return json({ authenticated: true }, 200, { 'Set-Cookie': [sessionCookie(createSession(db, key), secure), challengeCookie('', secure)] });
-    }
+    if (['/api/admin/request-code', '/api/admin/verify-code'].includes(path)) throw new HttpError(404, 'This sign-in method is no longer available.');
     if (path === '/api/admin/login' && method === 'POST') {
       rateLimit(req, 'login', 10, 15 * 60_000);
-      if (sms.configured) throw new HttpError(400, 'Use your phone number and a one-time code to sign in.');
       const input = await readJson(req);
       const email = textField(input.email, 'email', 254).toLowerCase();
       if (typeof input.password !== 'string' || !input.password || input.password.length > 256) throw new HttpError(400, 'Enter a valid password.');
       const password = input.password;
-      const admin = db.prepare('SELECT * FROM admin WHERE id = 1').get();
-      if (!admin || !(await verifyPassword(password, admin.password_hash)) || admin.email !== email) throw new HttpError(401, 'Email or password is incorrect.');
-      return json({ authenticated: true }, 200, { 'Set-Cookie': sessionCookie(createSession(db, passwordAuthKey(db)), secure) });
+      const admin = db.prepare('SELECT * FROM admin WHERE email = ?').get(email);
+      const credential = admin || db.prepare('SELECT * FROM admin ORDER BY id LIMIT 1').get();
+      const valid = credential ? await verifyPassword(password, credential.password_hash) : false;
+      if (!admin || !valid) throw new HttpError(401, 'Email or password is incorrect.');
+      return json({ authenticated: true }, 200, { 'Set-Cookie': sessionCookie(createSession(db, passwordAuthKey(admin)), secure) });
     }
     if (path.startsWith('/api/admin/')) {
       const session = requireAdmin(db, req, authKeys());
       if (path === '/api/admin/logout' && method === 'POST') {
         db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(session);
-        return json({ ok: true }, 200, { 'Set-Cookie': [sessionCookie('', secure), challengeCookie('', secure)] });
+        return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie('', secure) });
       }
       if (path === '/api/admin/data' && method === 'GET') {
         return json({ ...publicData(db), services: db.prepare("SELECT * FROM services WHERE id = 'haircut'").all(), bookings: db.prepare('SELECT id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, status, created_at FROM bookings ORDER BY starts_at DESC').all(), daysOff: db.prepare('SELECT * FROM days_off ORDER BY date').all() });

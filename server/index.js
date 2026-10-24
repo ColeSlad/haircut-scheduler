@@ -4,12 +4,11 @@ import { resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore } from './store.js';
 import { createApi } from './api.js';
-import { createAdminSms } from './admin-sms.js';
 
 const publicDir = fileURLToPath(new URL('../public', import.meta.url));
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon' };
-export function appServer({ db = openStore(), origin = 'http://localhost:3000', dataDir = resolve(process.env.DATA_DIR || 'data'), smsOptions } = {}) {
-  const api = createApi(db, { origin, secure: origin.startsWith('https://'), dataDir, sms: createAdminSms(db, smsOptions) });
+export function appServer({ db = openStore(), origin = 'http://localhost:3000', dataDir = resolve(process.env.DATA_DIR || 'data') } = {}) {
+  const api = createApi(db, { origin, secure: origin.startsWith('https://'), dataDir });
   return createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
