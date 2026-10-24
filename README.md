@@ -66,6 +66,8 @@ Client confirmation emails/texts, payment processing, external calendar synchron
 
 The TikTok gallery starts with three public videos from @l2cuts. Add or remove full video URLs in the admin’s TikTok videos tab. Videos use TikTok’s embedded player and require TikTok to be available; each card also links to the original video. New TikTok posts are added manually rather than automatically synced.
 
+The app bundles [Playfair Display](https://fonts.google.com/specimen/Playfair+Display) for its typography. The font is served locally, with its [SIL Open Font License](public/assets/playfair-display-OFL.txt) included.
+
 The sample photo gallery uses remote Unsplash images. A plain placeholder appears if images cannot load. Upload the barber’s own images in the admin area to replace the gallery samples.
 
 ## Project layout
