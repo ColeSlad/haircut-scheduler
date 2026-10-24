@@ -371,3 +371,10 @@ code { font-family: monospace; background: var(--soft); padding: 2px 4px; font-s
   .dialog-actions { gap: 8px; }
   .dialog-actions .button { font-size: 13px; padding-inline: 10px; }
 }
+
+@media (max-width: 400px) {
+  .hours-editor-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .hours-editor-row > div { width: 100%; }
+  .hours-editor-row > div > label { flex: 1; min-width: 0; }
+  .hours-editor-row input[type=time] { max-width: none; }
+}
