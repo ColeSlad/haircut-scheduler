@@ -1,0 +1,15 @@
+{
+  "name": "haircut-scheduler",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A single-barber booking website with a private admin workspace.",
+  "engines": { "node": ">=24.0.0" },
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=.env server/index.js",
+    "start": "node --env-file-if-exists=.env server/index.js",
+    "admin:create": "node --env-file-if-exists=.env scripts/create-admin.js",
+    "test": "node --test tests/*.test.js",
+    "check": "node scripts/check.js"
+  }
+}
