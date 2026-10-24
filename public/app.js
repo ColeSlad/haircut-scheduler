@@ -30,7 +30,7 @@ async function render() {
     if (!data) await refreshData();
     if (id !== routeId) return;
     const path = location.pathname;
-    document.title = `${({ '/': data.settings.tagline, '/schedule': 'Book your next cut', '/gallery': 'The gallery', '/admin': 'Studio workspace', '/booking': 'Your appointment' })[path] || 'Welcome'} — ${data.settings.name}`;
+    document.title = `${({ '/': data.settings.tagline, '/schedule': 'Book a haircut', '/gallery': 'Gallery', '/admin': 'Admin', '/booking': 'Appointment' })[path] || 'Welcome'} — ${data.settings.name}`;
     let robots = $('meta[name="robots"]');
     if (!robots) { robots = document.createElement('meta'); robots.name = 'robots'; document.head.append(robots); }
     robots.content = ['/admin', '/booking'].includes(path) ? 'noindex, nofollow' : 'index, follow';

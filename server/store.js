@@ -4,15 +4,15 @@ import { dirname, resolve } from 'node:path';
 
 export const defaults = {
   name: 'goodform.',
-  tagline: 'Good hair. Good company.',
-  description: 'A little time for yourself. A cut that feels like you. Book your next appointment, settle into the chair, and leave feeling good.',
-  location: 'Your neighborhood studio',
+  tagline: 'Haircut appointments',
+  description: 'Book a haircut online.',
+  location: 'Location not set',
   address: '',
   timezone: 'America/New_York',
   email: '',
   phone: '',
   instagram: '',
-  bookingNotice: 'Please arrive on time. Need to change your plans? Use the private link in your confirmation.',
+  bookingNotice: 'Please arrive on time. To cancel, use your private appointment link.',
   leadMinutes: 60,
   bookingDays: 60,
 };
@@ -58,9 +58,9 @@ export function openStore(file = resolve(process.env.DATA_DIR || 'data', 'schedu
     const hours = db.prepare('INSERT INTO hours VALUES (?, ?, ?, ?)');
     for (let day = 0; day < 7; day++) hours.run(day, day > 1 ? 1 : 0, '09:00', day === 6 ? '16:00' : '18:00');
     const gallery = db.prepare('INSERT INTO gallery VALUES (?, ?, ?, ?, ?, 1, ?)');
-    gallery.run('sample-1', 'Clean lines, easy days', 'Short cuts', '/assets/cut-1.jpg', 'Sample haircut inspiration: a short textured haircut', 0);
-    gallery.run('sample-2', 'A little texture', 'Texture', '/assets/cut-2.jpg', 'Sample haircut inspiration: textured hair and a natural finish', 1);
-    gallery.run('sample-3', 'The finishing touch', 'Beards', '/assets/cut-3.jpg', 'Sample inspiration: a carefully shaped beard', 2);
+    gallery.run('sample-1', 'Short haircut', 'Short cuts', '/assets/cut-1.jpg', 'Sample haircut inspiration: a short textured haircut', 0);
+    gallery.run('sample-2', 'Textured haircut', 'Texture', '/assets/cut-2.jpg', 'Sample haircut inspiration: textured hair and a natural finish', 1);
+    gallery.run('sample-3', 'Beard trim', 'Beards', '/assets/cut-3.jpg', 'Sample inspiration: a carefully shaped beard', 2);
   }
   if (db.prepare('PRAGMA user_version').get().user_version < 1) {
     db.exec('BEGIN IMMEDIATE');
@@ -91,6 +91,28 @@ export function openStore(file = resolve(process.env.DATA_DIR || 'data', 'schedu
         DROP TABLE admin_previous;
         PRAGMA user_version = 3;
         COMMIT;`);
+    } catch (error) { db.exec('ROLLBACK'); db.close(); throw error; }
+  }
+  if (db.prepare('PRAGMA user_version').get().user_version < 4) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      // Replace only untouched starter copy; preserve all admin edits.
+      const config = settings(db);
+      const previous = {
+        tagline: 'Good hair. Good company.',
+        description: 'A little time for yourself. A cut that feels like you. Book your next appointment, settle into the chair, and leave feeling good.',
+        location: 'Your neighborhood studio',
+        bookingNotice: 'Please arrive on time. Need to change your plans? Use the private link in your confirmation.',
+      };
+      for (const [key, value] of Object.entries(previous)) if (config[key] === value) config[key] = defaults[key];
+      db.prepare('UPDATE settings SET value = ? WHERE id = 1').run(JSON.stringify(config));
+      const rename = db.prepare('UPDATE gallery SET title = ? WHERE id = ? AND title = ? AND sample = 1 AND image = ?');
+      [
+        ['Short haircut', 'sample-1', 'Clean lines, easy days', '/assets/cut-1.jpg'],
+        ['Textured haircut', 'sample-2', 'A little texture', '/assets/cut-2.jpg'],
+        ['Beard trim', 'sample-3', 'The finishing touch', '/assets/cut-3.jpg'],
+      ].forEach((row) => rename.run(...row));
+      db.exec('PRAGMA user_version = 4; COMMIT;');
     } catch (error) { db.exec('ROLLBACK'); db.close(); throw error; }
   }
   return db;
