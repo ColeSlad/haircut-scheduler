@@ -1,0 +1,46 @@
+import { createServer } from 'node:http';
+import { readFileSync, statSync } from 'node:fs';
+import { resolve, extname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { openStore } from './store.js';
+import { createApi } from './api.js';
+
+const publicDir = fileURLToPath(new URL('../public', import.meta.url));
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon' };
+export function appServer({ db = openStore(), origin = 'http://localhost:3000', dataDir = resolve(process.env.DATA_DIR || 'data') } = {}) {
+  const api = createApi(db, { origin, secure: origin.startsWith('https://'), dataDir });
+  return createServer(async (req, res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://images.unsplash.com blob: data:; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+    try {
+      const url = new URL(req.url, origin);
+      if (url.pathname.startsWith('/api/')) return await api(req, res, url);
+      if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }); return res.end(); }
+      let path;
+      if (['/', '/schedule', '/gallery', '/admin', '/booking'].includes(url.pathname)) path = resolve(publicDir, 'index.html');
+      else if (/^\/uploads\/[a-f0-9-]+\.(jpg|png|webp)$/.test(url.pathname)) path = resolve(dataDir, url.pathname.slice(1));
+      else if (/^\/(assets\/[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+\.(css|js|svg|ico))$/.test(url.pathname)) path = resolve(publicDir, url.pathname.slice(1));
+      if (!path || !statSync(path, { throwIfNoEntry: false })?.isFile()) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('Page not found.');
+      }
+      res.writeHead(200, { 'Content-Type': types[extname(path)] || 'application/octet-stream', 'Cache-Control': extname(path) === '.html' ? 'no-cache' : 'public, max-age=3600' });
+      res.end(req.method === 'HEAD' ? undefined : readFileSync(path));
+    } catch (error) {
+      if (res.headersSent) return res.end();
+      const status = error.status || 500;
+      if (status === 500) console.error(error);
+      res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ error: status === 500 ? 'Something went wrong. Please try again.' : error.message }));
+    }
+  });
+}
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const port = Number(process.env.PORT || 3000);
+  const origin = process.env.APP_ORIGIN || `http://localhost:${port}`;
+  if (process.env.NODE_ENV === 'production' && !origin.startsWith('https://')) throw new Error('Set APP_ORIGIN to your public HTTPS URL in production.');
+  const server = appServer({ origin });
+  server.listen(port, process.env.HOST || '127.0.0.1', () => console.log(`goodform. is ready at ${origin}`));
+}
