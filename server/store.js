@@ -47,6 +47,10 @@ export function openStore(file = resolve(process.env.DATA_DIR || 'data', 'schedu
     CREATE TABLE IF NOT EXISTS videos (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, url TEXT NOT NULL UNIQUE, position INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS home_videos (
+      id TEXT PRIMARY KEY, title TEXT NOT NULL, video TEXT NOT NULL UNIQUE,
+      poster TEXT NOT NULL, position INTEGER NOT NULL
+    );
   `);
   if (!db.prepare('PRAGMA table_info(sessions)').all().some((column) => column.name === 'auth_key')) {
     db.exec("ALTER TABLE sessions ADD COLUMN auth_key TEXT NOT NULL DEFAULT ''");
@@ -129,5 +133,6 @@ export function publicData(db) {
     hours: db.prepare('SELECT * FROM hours ORDER BY day').all(),
     gallery: db.prepare('SELECT * FROM gallery ORDER BY position').all(),
     videos: db.prepare('SELECT * FROM videos ORDER BY position').all(),
+    homeVideos: db.prepare('SELECT * FROM home_videos ORDER BY position').all(),
   };
 }
