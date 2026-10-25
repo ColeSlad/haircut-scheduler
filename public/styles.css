@@ -86,9 +86,20 @@ main { flex: 1; }
 .page-intro, .booking-intro { padding-block: 40px 28px; }
 .page-intro > p, .booking-intro > p { margin-top: 12px; }
 .home-intro { padding-bottom: 48px; }
-.home-intro > p { max-width: 600px; }
-.home-intro > .home-price { margin-top: 20px; font-size: 18px; color: var(--ink); }
-.home-intro > .fine-print { margin-top: 16px; }
+.home-intro.with-reviews { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 64px; }
+.home-copy > p { margin-top: 12px; max-width: 600px; }
+.home-copy > .home-price { margin-top: 20px; font-size: 18px; color: var(--ink); }
+.home-copy > .fine-print { margin-top: 16px; }
+.home-reviews { min-width: 0; }
+.review-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+.review-score { font-size: 22px; color: var(--ink); white-space: nowrap; }
+.review-item { margin: 0; padding-block: 12px; }
+.review-item + .review-item { border-top: 1px solid var(--line); }
+.review-stars { font-size: 15px; letter-spacing: 2px; }
+.review-item blockquote { margin: 6px 0; }
+.review-item blockquote p { font-size: 14px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.review-item figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.review-placeholder { font-size: 11px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 3px; }
 .home-videos { padding-bottom: 48px; }
 .local-video-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; }
 .local-video-grid video { display: block; width: 100%; aspect-ratio: 9 / 16; object-fit: contain; border-radius: 4px; background: #111; }
@@ -297,6 +308,7 @@ code { font-family: monospace; background: var(--soft); padding: 2px 4px; font-s
   .page-intro, .booking-intro { padding-block: 28px 24px; }
   .page-intro > p, .booking-intro > p { font-size: 15px; }
   .home-intro { padding-bottom: 32px; }
+  .home-intro.with-reviews { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .home-videos { padding-bottom: 36px; }
   .local-video-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .video-grid { grid-template-columns: minmax(0, 1fr); max-width: 400px; margin-inline: auto; gap: 28px; }

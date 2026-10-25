@@ -22,13 +22,15 @@ A new email adds an admin; entering an existing email resets only that account�
 
 ## What’s included
 
-- **Landing page** (`/`): a short introduction, haircut price/duration, booking button, gallery link, and local haircut videos with playback controls.
+- **Landing page** (`/`): a short introduction, haircut price/duration, booking button, gallery link, editable reviews beside the introduction, and local haircut videos with playback controls.
 - **Booking** (`/schedule`): choose an available date/time, then enter your first name, last name, and phone number. No email address or notes are collected. Prices are in USD, with payment at the appointment.
 - **Confirmation** (`/booking#private-token`): appointment details, a private cancellation link, and an `.ics` calendar download. The token stays in the URL fragment rather than server access logs.
 - **Gallery** (`/gallery`): playable TikTok videos from [@l2cuts](https://www.tiktok.com/@l2cuts) and the same local haircut clips shown on the homepage, with responsive layouts.
-- **Admin** (`/admin`): appointment search and status updates, weekly hours, full days off, haircut price/duration edits, photo uploads, TikTok video links/titles, and studio details.
+- **Admin** (`/admin`): appointment search and status updates, weekly hours, full days off, haircut price/duration edits, reviews, photo uploads, TikTok video links/titles, and studio details.
 
-Appointments, admin accounts, sessions, settings, and homepage video metadata persist in SQLite. Gallery uploads and homepage video files persist on disk. Booking validation and conflict checks run in an immediate database transaction so two clients cannot reserve overlapping time for the same barber.
+Appointments, admin accounts, sessions, settings, reviews, and homepage video metadata persist in SQLite. Gallery uploads and homepage video files persist on disk. Booking validation and conflict checks run in an immediate database transaction so two clients cannot reserve overlapping time for the same barber.
+
+Reviews start with a 4.99/5 display score and three labeled five-star placeholders. Edit names, text, stars, placeholder labels, and the overall score in **Admin → Reviews**. The overall score is set separately from individual ratings. Removing every review hides the section. Placeholder content is seeded once and does not overwrite later edits.
 
 ## Defaults and booking rules
 

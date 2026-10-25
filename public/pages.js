@@ -15,15 +15,23 @@ function localVideoPlayers(videos = []) {
   return videos.map((video) => `<video controls playsinline preload="none" poster="${esc(video.poster)}" aria-label="${esc(video.title)}"><source src="${esc(video.video)}" type="video/mp4"><a href="${esc(video.video)}">Open video</a></video>`).join('');
 }
 
+function homeReviews(reviews) {
+  if (!reviews?.items.length) return '';
+  return `<aside class="home-reviews" aria-labelledby="reviews-heading"><div class="review-heading"><h2 id="reviews-heading">Reviews</h2><p class="review-score" aria-label="${reviews.rating} out of 5 stars">${reviews.rating.toFixed(2)}/5</p></div><div class="review-list">${reviews.items.map((review) => `<figure class="review-item"><div class="review-stars" role="img" aria-label="${review.stars} out of 5 stars"><span aria-hidden="true">${'★'.repeat(review.stars)}${'☆'.repeat(5 - review.stars)}</span></div><blockquote><p>${esc(review.text)}</p></blockquote><figcaption>${esc(review.name)}${review.sample ? '<span class="review-placeholder">Placeholder</span>' : ''}</figcaption></figure>`).join('')}</div></aside>`;
+}
+
 export function home(data) {
   const { settings: s, services } = data;
   const [haircut] = services;
-  return `<section class="section-shell page-intro home-intro">
-    <h1>Haircuts</h1>
-    <p>${esc(s.description)}</p>
-    ${haircut ? `<p class="home-price">${haircut.duration} min · ${money(haircut.price)}</p>` : ''}
-    <div class="page-actions"><a class="button primary" href="/schedule">Book a cut</a><a class="text-link" href="/gallery">Gallery</a></div>
-    ${haircut ? '<p class="fine-print">Pay at your appointment.</p>' : ''}
+  return `<section class="section-shell page-intro home-intro ${data.reviews?.items.length ? 'with-reviews' : ''}">
+    <div class="home-copy">
+      <h1>Haircuts</h1>
+      <p>${esc(s.description)}</p>
+      ${haircut ? `<p class="home-price">${haircut.duration} min · ${money(haircut.price)}</p>` : ''}
+      <div class="page-actions"><a class="button primary" href="/schedule">Book a cut</a><a class="text-link" href="/gallery">Gallery</a></div>
+      ${haircut ? '<p class="fine-print">Pay at your appointment.</p>' : ''}
+    </div>
+    ${homeReviews(data.reviews)}
   </section>${data.homeVideos?.length ? `<section class="section-shell home-videos local-video-grid" aria-label="Haircut videos">${localVideoPlayers(data.homeVideos)}</section>` : ''}`;
 }
 
