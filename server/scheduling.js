@@ -60,7 +60,7 @@ export function textField(value, label, max, required = true) {
   if (typeof value !== 'string' || (required && !value.trim()) || value.length > max) throw new HttpError(400, `Enter a valid ${label}${max ? ` (up to ${max} characters)` : ''}.`);
   return value.trim();
 }
-export async function createBooking(db, input, now = Date.now()) {
+export async function createBooking(db, input, now = Date.now(), { id = randomUUID(), token = randomBytes(32).toString('base64url') } = {}) {
   const serviceId = input.serviceId ?? 'haircut';
   const firstName = textField(input.firstName, 'first name', 50);
   const lastName = textField(input.lastName, 'last name', 50);
@@ -73,10 +73,8 @@ export async function createBooking(db, input, now = Date.now()) {
     const slot = (await availableSlots(db, input.date, serviceId, now)).find((item) => item.time === input.time);
     if (!slot) throw new HttpError(409, 'That time is no longer available. Please choose another time.');
     const service = (await db.prepare('SELECT * FROM services WHERE id = ?').get(serviceId));
-    const id = randomUUID();
-    const token = randomBytes(32).toString('base64url');
-    (await db.prepare(`INSERT INTO bookings (id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, token_hash, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, service.id, service.name, service.duration, service.price, input.date, input.time, slot.startsAt, slot.endsAt, name, '', phone, '', tokenHash(token), now));
-    return { id, token, serviceName: service.name, duration: service.duration, price: service.price, date: input.date, time: input.time, startsAt: slot.startsAt, endsAt: slot.endsAt, name, status: 'confirmed', timezone: (await settings(db)).timezone };
+    (await db.prepare(`INSERT INTO bookings (id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, token_hash, created_at, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`).run(id, service.id, service.name, service.duration, service.price, input.date, input.time, slot.startsAt, slot.endsAt, name, '', phone, '', tokenHash(token), now));
+    return { id, token, serviceName: service.name, duration: service.duration, price: service.price, date: input.date, time: input.time, startsAt: slot.startsAt, endsAt: slot.endsAt, name, status: 'pending', timezone: (await settings(db)).timezone };
   });
 }

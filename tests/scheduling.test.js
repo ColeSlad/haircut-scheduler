@@ -59,7 +59,7 @@ test('cancelling an appointment releases the slot', async (t) => {
 test('failed reservations roll back and leave the next valid booking usable', async (t) => {
   const db = await fixture(t);
   await assert.rejects(async () => (await createBooking(db, { ...input, time: '23:00' }, now)), { status: 409 });
-  assert.equal((await createBooking(db, input, now)).status, 'confirmed');
+  assert.equal((await createBooking(db, input, now)).status, 'pending');
 });
 test('studio wall time is correct through DST and independent of server time zone', () => {
   assert.equal(toTimestamp('2026-10-27', '09:00', 'America/New_York'), Date.parse('2026-10-27T13:00:00Z'));
