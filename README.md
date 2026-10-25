@@ -70,7 +70,7 @@ The TikTok gallery starts with three public videos from @l2cuts. Add or remove f
 
 The homepage and gallery share local MP4 clips and JPEG posters in ignored `data/uploads/`, with titles and ordering in the `home_videos` database table. They load on demand and do not autoplay. Include these runtime files and the database when moving the app to another server; personal media is not committed to Git.
 
-The app bundles [Playfair Display](https://fonts.google.com/specimen/Playfair+Display) for its typography. The font is served locally, with its [SIL Open Font License](public/assets/playfair-display-OFL.txt) included.
+The app bundles [DM Sans](https://fonts.google.com/specimen/DM+Sans) for its typography. The font is served locally, with its [SIL Open Font License](public/assets/dm-sans-OFL.txt) included.
 
 Saved photos and labeled samples remain available in admin. The public gallery displays videos in place of the former Photos section.
 
