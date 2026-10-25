@@ -4,12 +4,26 @@
   "private": true,
   "type": "module",
   "description": "A single-barber booking website with a private admin workspace.",
-  "engines": { "node": ">=24.0.0" },
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "scripts": {
     "dev": "node --watch --env-file-if-exists=.env server/index.js",
     "start": "node --env-file-if-exists=.env server/index.js",
     "admin:create": "node --env-file-if-exists=.env scripts/create-admin.js",
     "test": "node --test tests/*.test.js",
     "check": "node scripts/check.js"
+  },
+  "dependencies": {
+    "@vercel/blob": "^2.8.2",
+    "@vercel/functions": "^3.10.3",
+    "pg": "^8.23.1",
+    "stripe": "^23.0.1"
+  },
+  "devDependencies": {
+    "vite": "^8.3.5"
+  },
+  "overrides": {
+    "zod": "^4.6.6"
   }
 }
