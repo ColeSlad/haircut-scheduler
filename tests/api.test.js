@@ -220,16 +220,13 @@ test('studio time zone cannot change underneath existing upcoming appointments',
   const result = await request('/api/admin/settings', { method: 'PUT', headers: { cookie: await login() }, body: { ...(await settings(db)), timezone: 'America/Los_Angeles' } });
   assert.equal(result.status, 400);
 });
-test('admin can upload real images; executable and oversized uploads are rejected', async (t) => {
-  const { request, login, dataDir } = await fixture(t);
+test('photo uploads require admin access and gallery URLs must be validated', async (t) => {
+  const { request, login } = await fixture(t);
   const headers = { cookie: await login() };
-  const image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
-  const uploaded = await request('/api/admin/upload', { method: 'POST', headers, body: { data: image } });
-  assert.equal(uploaded.status, 201);
-  assert.equal(readdirSync(join(dataDir, 'uploads')).length, 1);
-  assert.equal((await request(uploaded.body.image)).status, 200);
-  assert.equal((await request('/api/admin/upload', { method: 'POST', headers, body: { data: Buffer.from('<svg onload="alert(1)"></svg>').toString('base64') } })).status, 400);
-  const photo = { title: 'A fresh cut', category: 'Short cuts', image: uploaded.body.image, alt: 'A short haircut', sample: false };
+  assert.equal((await request('/api/admin/upload', { method: 'POST', body: {} })).status, 401);
+  assert.equal((await request('/api/admin/upload/complete', { method: 'POST', body: {} })).status, 401);
+  assert.equal((await request('/api/admin/upload/complete', { method: 'POST', headers, body: { image: 'https://other.example/picture.jpg' } })).status, 400);
+  const photo = { title: 'A fresh cut', category: 'Short cuts', image: '/assets/cut-1.jpg', alt: 'A short haircut', sample: false };
   assert.equal((await request('/api/admin/gallery', { method: 'PUT', headers, body: { gallery: [photo] } })).status, 200);
   assert.equal((await request('/api/admin/gallery', { method: 'PUT', headers, body: { gallery: [{ ...photo, image: 'javascript:alert(1)' }] } })).status, 400);
 });

@@ -1,15 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { publicData, settings } from './store.js';
 import { HttpError, availableSlots, tokenHash, textField, validDate, validTime, minutes } from './scheduling.js';
 import { createSession, requireAdmin, sessionCookie, verifyPassword, passwordAuthKey, passwordAuthKeys, readCookie } from './auth.js';
 import { tiktokVideoUrl } from './videos.js';
 import { rateLimit } from './limits.js';
 import { createPayments } from './payments.js';
+import { createStorage } from './storage.js';
 
 const categories = ['Short cuts', 'Texture', 'Beards', 'Long cuts'];
-export function createApi(db, { origin, secure, dataDir, provider }) {
+export function createApi(db, { origin, secure, provider, storage = createStorage(db) }) {
   const payments = createPayments(db, { origin, provider });
   const authKeys = async () => (await passwordAuthKeys(db));
   return async function api(req, res, url) {
@@ -22,6 +21,11 @@ export function createApi(db, { origin, secure, dataDir, provider }) {
     if (path === '/api/stripe/webhook' && method === 'POST') {
       await payments.webhook(await readRaw(req), req.headers['stripe-signature']);
       return json({ received: true });
+    }
+    if (path === '/api/admin/upload' && method === 'POST' && req.headers['x-vercel-signature']) {
+      const body = await readJson(req);
+      if (body.type !== 'blob.upload-completed') throw new HttpError(400, 'Invalid storage callback.');
+      return json(await storage.handle(req, body, () => requireAdmin(db, req, authKeys())));
     }
     if (path === '/api/cron/payments' && method === 'GET') {
       if (!process.env.CRON_SECRET || tokenHash(req.headers.authorization || '') !== tokenHash(`Bearer ${process.env.CRON_SECRET}`)) throw new HttpError(401, 'Unauthorized.');
@@ -198,7 +202,7 @@ export function createApi(db, { origin, secure, dataDir, provider }) {
         const { gallery } = await readJson(req);
         if (!Array.isArray(gallery) || gallery.length > 100) throw new HttpError(400, 'Keep up to 100 gallery photos.');
         const ids = new Set();
-        const rows = gallery.map((item, position) => {
+        const rows = await Promise.all(gallery.map(async (item, position) => {
           if (!item || typeof item !== 'object') throw new HttpError(400, 'Enter valid photo details.');
           const id = item.id || randomUUID();
           if (typeof id !== 'string' || id.length > 80 || ids.has(id)) throw new HttpError(400, 'Invalid gallery ID.');
@@ -207,9 +211,9 @@ export function createApi(db, { origin, secure, dataDir, provider }) {
           const alt = textField(item.alt, 'image description', 250);
           if (!categories.includes(item.category)) throw new HttpError(400, 'Choose a photo category.');
           const image = textField(item.image, 'image', 500);
-          if (!/^\/(assets\/[A-Za-z0-9_.-]+|uploads\/[a-f0-9-]+\.(jpg|png|webp))$/.test(image)) throw new HttpError(400, 'Upload a photo before saving it.');
+          if (!await storage.allowedPhoto(image)) throw new HttpError(400, 'Upload a photo before saving it.');
           return [id, title, item.category, image, alt, item.sample ? 1 : 0, position];
-        });
+        }));
         await db.transaction(async (db) => {
           await db.exec('DELETE FROM gallery');
           for (const row of rows) (await db.prepare('INSERT INTO gallery VALUES (?, ?, ?, ?, ?, ?, ?)').run(...row));
@@ -217,19 +221,12 @@ export function createApi(db, { origin, secure, dataDir, provider }) {
         return json({ ok: true });
       }
       if (path === '/api/admin/upload' && method === 'POST') {
-        const { data } = await readJson(req, 8_000_000);
-        if (typeof data !== 'string' || !/^[A-Za-z0-9+/=]+$/.test(data)) throw new HttpError(400, 'Choose a JPEG, PNG, or WebP image.');
-        const bytes = Buffer.from(data, 'base64');
-        if (!bytes.length || bytes.length > 5_000_000) throw new HttpError(400, 'Images must be under 5 MB.');
-        let extension;
-        if (bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]))) extension = 'jpg';
-        else if (bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) extension = 'png';
-        else if (bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP') extension = 'webp';
-        else throw new HttpError(400, 'Choose a JPEG, PNG, or WebP image.');
-        mkdirSync(resolve(dataDir, 'uploads'), { recursive: true });
-        const filename = `${randomUUID()}.${extension}`;
-        writeFileSync(resolve(dataDir, 'uploads', filename), bytes, { flag: 'wx' });
-        return json({ image: `/uploads/${filename}` }, 201);
+        await rateLimit(db, req, 'upload', 30, 60 * 60_000);
+        return json(await storage.handle(req, await readJson(req), async () => requireAdmin(db, req, await authKeys())));
+      }
+      if (path === '/api/admin/upload/complete' && method === 'POST') {
+        const input = await readJson(req);
+        return json(await storage.validatePhoto(textField(input.image, 'image', 500)), 201);
       }
     }
     throw new HttpError(404, 'This page or action could not be found.');
