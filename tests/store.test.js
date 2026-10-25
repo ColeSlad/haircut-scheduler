@@ -53,6 +53,22 @@ test('TikTok videos are seeded once and admin removal survives reopening', (t) =
   assert.deepEqual(publicData(db).videos, []);
 });
 
+test('placeholder reviews are seeded once and admin edits or removal survive reopening', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'haircut-review-migration-'));
+  const file = join(directory, 'scheduler.sqlite');
+  let db = openStore(file);
+  t.after(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
+  const saved = { rating: 4.8, items: [{ id: 'custom-review', name: 'Sam Example', text: 'Custom review.', stars: 5, sample: false }] };
+  db.prepare('UPDATE review_content SET value = ? WHERE id = 1').run(JSON.stringify(saved));
+  db.close();
+  db = openStore(file);
+  assert.deepEqual(publicData(db).reviews, saved);
+  db.prepare('UPDATE review_content SET value = ? WHERE id = 1').run(JSON.stringify({ rating: 5, items: [] }));
+  db.close();
+  db = openStore(file);
+  assert.deepEqual(publicData(db).reviews, { rating: 5, items: [] });
+});
+
 test('old session tables migrate without changing an existing admin account', (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'haircut-auth-migration-'));
   const file = join(directory, 'scheduler.sqlite');

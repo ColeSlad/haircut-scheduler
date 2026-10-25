@@ -61,14 +61,15 @@ test('public data excludes appointments, login credentials, and tokens', async (
   const { request } = await fixture(t);
   const result = await request('/api/public');
   assert.equal(result.status, 200);
-  assert.deepEqual(Object.keys(result.body).sort(), ['gallery', 'homeVideos', 'hours', 'services', 'settings', 'videos']);
+  assert.deepEqual(Object.keys(result.body).sort(), ['gallery', 'homeVideos', 'hours', 'reviews', 'services', 'settings', 'videos']);
   assert.equal(result.headers['cache-control'], 'no-store');
 });
 test('private admin endpoints and mutations require authentication', async (t) => {
   const { request } = await fixture(t);
-  for (const path of ['/api/admin/data', '/api/admin/settings', '/api/admin/gallery', '/api/admin/videos']) assert.equal((await request(path)).status, 401);
+  for (const path of ['/api/admin/data', '/api/admin/settings', '/api/admin/gallery', '/api/admin/videos', '/api/admin/reviews']) assert.equal((await request(path)).status, 401);
   assert.equal((await request('/api/admin/settings', { method: 'PUT', body: {} })).status, 401);
   assert.equal((await request('/api/admin/videos', { method: 'PUT', body: { videos: [] } })).status, 401);
+  assert.equal((await request('/api/admin/reviews', { method: 'PUT', body: { rating: 5, items: [] } })).status, 401);
 });
 test('login creates an HttpOnly session and logout revokes it', async (t) => {
   const { request } = await fixture(t);
@@ -249,6 +250,32 @@ test('admin can curate TikTok videos with validated links and public ordering', 
   assert.deepEqual((await request('/api/public')).body.videos, saved);
   assert.equal((await request('/api/admin/videos', { method: 'PUT', headers, body: { videos: [] } })).status, 200);
   assert.deepEqual((await request('/api/public')).body.videos, []);
+});
+test('admin can edit the overall review score and individual reviews without partial invalid saves', async (t) => {
+  const { request, login } = await fixture(t);
+  const initial = (await request('/api/public')).body.reviews;
+  assert.equal(initial.rating, 4.99);
+  assert.equal(initial.items.length, 3);
+  assert(initial.items.every((review) => review.stars === 5 && review.sample === true));
+  const headers = { cookie: await login() };
+  const review = { name: 'Sam Example', text: 'A review edited by the admin.', stars: 5, sample: false };
+  const body = { rating: 4.95, items: [review] };
+  assert.equal((await request('/api/admin/reviews', { method: 'PUT', headers, body })).status, 200);
+  const saved = (await request('/api/public')).body.reviews;
+  assert.equal(saved.rating, 4.95);
+  assert.deepEqual({ ...saved.items[0], id: undefined }, { ...review, id: undefined });
+  assert.equal(typeof saved.items[0].id, 'string');
+  for (const invalid of [
+    { ...body, rating: -1 }, { ...body, rating: 5.01 }, { ...body, rating: 4.999 }, { ...body, rating: '4.99' },
+    { ...body, items: null }, { ...body, items: Array(11).fill(review) }, { ...body, items: [null] },
+    { ...body, items: [{ ...review, name: '' }] }, { ...body, items: [{ ...review, text: 'x'.repeat(601) }] },
+    { ...body, items: [{ ...review, stars: 0 }] }, { ...body, items: [{ ...review, stars: 5.5 }] },
+    { ...body, items: [{ ...review, sample: 'false' }] }, { ...body, items: [saved.items[0], saved.items[0]] },
+  ]) assert.equal((await request('/api/admin/reviews', { method: 'PUT', headers, body: invalid })).status, 400);
+  assert.deepEqual((await request('/api/public')).body.reviews, saved);
+  assert.equal((await request('/api/admin/reviews', { method: 'PUT', headers: { ...headers, origin: 'https://other.example' }, body })).status, 403);
+  assert.equal((await request('/api/admin/reviews', { method: 'PUT', headers, body: { rating: 5, items: [] } })).status, 200);
+  assert.deepEqual((await request('/api/public')).body.reviews, { rating: 5, items: [] });
 });
 test('static routing does not expose server files, databases, or environment files', async (t) => {
   const { request } = await fixture(t);

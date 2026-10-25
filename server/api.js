@@ -153,6 +153,23 @@ export function createApi(db, { origin, secure, dataDir }) {
         db.prepare("UPDATE services SET duration = ?, price = ? WHERE id = 'haircut'").run(service.duration, service.price);
         return json({ ok: true });
       }
+      if (path === '/api/admin/reviews' && method === 'PUT') {
+        const { rating, items } = await readJson(req);
+        if (typeof rating !== 'number' || !Number.isFinite(rating) || rating < 0 || rating > 5 || Math.abs(rating * 100 - Math.round(rating * 100)) > 1e-8) throw new HttpError(400, 'Enter an overall rating from 0 to 5 with up to two decimal places.');
+        if (!Array.isArray(items) || items.length > 10) throw new HttpError(400, 'Keep up to 10 reviews.');
+        const ids = new Set();
+        const reviews = items.map((item) => {
+          if (!item || typeof item !== 'object') throw new HttpError(400, 'Enter valid review details.');
+          const id = item.id || randomUUID();
+          if (typeof id !== 'string' || id.length > 80 || ids.has(id)) throw new HttpError(400, 'Invalid review ID.');
+          ids.add(id);
+          if (!Number.isInteger(item.stars) || item.stars < 1 || item.stars > 5) throw new HttpError(400, 'Choose a star rating from 1 to 5.');
+          if (typeof item.sample !== 'boolean') throw new HttpError(400, 'Choose whether this is a placeholder review.');
+          return { id, name: textField(item.name, 'reviewer name', 80), text: textField(item.text, 'review text', 600), stars: item.stars, sample: item.sample };
+        });
+        db.prepare('UPDATE review_content SET value = ? WHERE id = 1').run(JSON.stringify({ rating, items: reviews }));
+        return json({ ok: true });
+      }
       if (/^\/api\/admin\/bookings\/[^/]+$/.test(path) && method === 'PATCH') {
         const { status } = await readJson(req);
         if (!['cancelled', 'completed', 'no-show'].includes(status)) throw new HttpError(400, 'Choose a valid appointment status.');

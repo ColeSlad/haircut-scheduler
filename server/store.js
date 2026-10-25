@@ -51,7 +51,16 @@ export function openStore(file = resolve(process.env.DATA_DIR || 'data', 'schedu
       id TEXT PRIMARY KEY, title TEXT NOT NULL, video TEXT NOT NULL UNIQUE,
       poster TEXT NOT NULL, position INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS review_content (id INTEGER PRIMARY KEY CHECK(id = 1), value TEXT NOT NULL);
   `);
+  db.prepare('INSERT OR IGNORE INTO review_content VALUES (1, ?)').run(JSON.stringify({
+    rating: 4.99,
+    items: [
+      { id: 'sample-review-1', name: 'Sample customer 1', text: 'Great haircut. Would book again.', stars: 5, sample: true },
+      { id: 'sample-review-2', name: 'Sample customer 2', text: 'Easy booking and a clean cut.', stars: 5, sample: true },
+      { id: 'sample-review-3', name: 'Sample customer 3', text: 'Really happy with the haircut.', stars: 5, sample: true },
+    ],
+  }));
   if (!db.prepare('PRAGMA table_info(sessions)').all().some((column) => column.name === 'auth_key')) {
     db.exec("ALTER TABLE sessions ADD COLUMN auth_key TEXT NOT NULL DEFAULT ''");
   }
@@ -134,5 +143,6 @@ export function publicData(db) {
     gallery: db.prepare('SELECT * FROM gallery ORDER BY position').all(),
     videos: db.prepare('SELECT * FROM videos ORDER BY position').all(),
     homeVideos: db.prepare('SELECT * FROM home_videos ORDER BY position').all(),
+    reviews: JSON.parse(db.prepare('SELECT value FROM review_content WHERE id = 1').get().value),
   };
 }
