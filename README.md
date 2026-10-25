@@ -2,7 +2,7 @@
 
 A complete starting point for a single barber: a studio landing page, online appointment scheduling, a photo and TikTok video gallery, and an email/password-protected admin workspace for up to two admins. Clients book without an account.
 
-The starter brand is **goodform.**, with an editable haircut price and duration, hours, and location. Replace the defaults in the admin area before taking real bookings.
+The header, browser icon, and loading screen use the supplied **L2 Cuts** logo in `public/assets/l2cuts-logo.png`. Business details, haircut price and duration, hours, and location are editable in admin. Replace the defaults before taking real bookings.
 
 ## Run locally
 

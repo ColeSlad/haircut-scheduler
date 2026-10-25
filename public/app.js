@@ -1,14 +1,14 @@
-import { $, esc, imageEvents, api } from './shared.js?v=12';
-import { home, galleryPage } from './pages.js?v=12';
-import { mountScheduler, mountConfirmation } from './booking.js?v=12';
-import { mountAdmin } from './admin.js?v=12';
+import { $, esc, imageEvents, api } from './shared.js?v=13';
+import { home, galleryPage } from './pages.js?v=13';
+import { mountScheduler, mountConfirmation } from './booking.js?v=13';
+import { mountAdmin } from './admin.js?v=13';
 let data;
 let routeId = 0;
 const app = $('#app');
 
 function header(path) {
   return `<header class="site-header section-shell">
-    <a class="wordmark" href="/" aria-label="${esc(data.settings.name)} home">${esc(data.settings.name)}</a>
+    <a class="site-brand" href="/" aria-label="${esc(data.settings.name)} home"><img class="site-logo" src="/assets/l2cuts-logo.png" alt="L2 Cuts" width="88" height="88" fetchpriority="high" decoding="async"></a>
     <nav class="site-nav" aria-label="Main navigation">
       <a href="/" ${path === '/' ? 'aria-current="page"' : ''}>Home</a>
       <a href="/schedule" ${path === '/schedule' ? 'aria-current="page"' : ''}>Book a cut</a>
