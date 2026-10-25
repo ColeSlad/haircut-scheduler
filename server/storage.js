@@ -1,6 +1,7 @@
 import { head, del } from '@vercel/blob';
 import { handleUpload } from '@vercel/blob/client';
 import { HttpError } from './scheduling.js';
+import { callbackUrl } from './urls.js';
 
 export function imageType(bytes) {
   if (bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]))) return 'image/jpeg';
@@ -18,7 +19,7 @@ export function trustedBlobUrl(value, origin = process.env.BLOB_PUBLIC_ORIGIN) {
   } catch { return false; }
 }
 
-export function createStorage(db, { origin = process.env.BLOB_PUBLIC_ORIGIN, inspect = head, remove = del, fetchBytes = fetch, uploadHandler = handleUpload } = {}) {
+export function createStorage(db, { origin = process.env.BLOB_PUBLIC_ORIGIN, callbackOrigin = process.env.APP_ORIGIN, inspect = head, remove = del, fetchBytes = fetch, uploadHandler = handleUpload } = {}) {
   async function validatePhoto(url) {
     if (!trustedBlobUrl(url, origin) || !new URL(url).pathname.startsWith('/photos/')) throw new HttpError(400, 'Upload a photo before saving it.');
     const info = await inspect(url);
@@ -48,7 +49,9 @@ export function createStorage(db, { origin = process.env.BLOB_PUBLIC_ORIGIN, ins
       onBeforeGenerateToken: async (pathname) => {
         const authKey = await authorize();
         if (!/^photos\/[a-f0-9-]{36}\.(jpg|jpeg|png|webp)$/.test(pathname)) throw new HttpError(400, 'Choose a valid photo filename.');
-        return { allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'], maximumSizeInBytes: 5_000_000, validUntil: Date.now() + 10 * 60_000, addRandomSuffix: false, allowOverwrite: false, tokenPayload: authKey };
+        return { allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'], maximumSizeInBytes: 5_000_000, validUntil: Date.now() + 10 * 60_000, addRandomSuffix: false, allowOverwrite: false, tokenPayload: authKey,
+          ...(process.env.VERCEL_ENV === 'preview' ? { callbackUrl: callbackUrl(callbackOrigin, '/api/admin/upload') } : {}),
+        };
       },
       // The SDK verifies the provider signature before invoking this callback.
       // The client also finalizes with an authenticated call, so local uploads work without a public callback.

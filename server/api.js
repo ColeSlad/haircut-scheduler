@@ -8,7 +8,7 @@ import { createPayments } from './payments.js';
 import { createStorage } from './storage.js';
 
 const categories = ['Short cuts', 'Texture', 'Beards', 'Long cuts'];
-export function createApi(db, { origin, secure, provider, storage = createStorage(db) }) {
+export function createApi(db, { origin, secure, provider, storage = createStorage(db, { callbackOrigin: origin }) }) {
   const payments = createPayments(db, { origin, provider });
   const authKeys = async () => (await passwordAuthKeys(db));
   return async function api(req, res, url) {
@@ -170,7 +170,9 @@ export function createApi(db, { origin, secure, provider, storage = createStorag
         if (service?.id !== 'haircut' || ![true, 1].includes(service.active)) throw new HttpError(400, 'Keep the haircut service available.');
         if (!Number.isInteger(service.duration) || service.duration < 15 || service.duration > 180 || service.duration % 15) throw new HttpError(400, 'Haircut duration must be 15–180 minutes in 15-minute increments.');
         if (!Number.isInteger(service.price) || service.price < 50 || service.price > 100000) throw new HttpError(400, 'Price must be between $0.50 and $1,000.');
-        (await db.prepare("UPDATE services SET duration = ?, price = ? WHERE id = 'haircut'").run(service.duration, service.price));
+        await db.transaction(async (tx) => {
+          await tx.prepare("UPDATE services SET duration = ?, price = ? WHERE id = 'haircut'").run(service.duration, service.price);
+        });
         return json({ ok: true });
       }
       if (path === '/api/admin/reviews' && method === 'PUT') {
