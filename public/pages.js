@@ -18,6 +18,10 @@ export function galleryCard(item) {
   </article>`;
 }
 
+function localVideoPlayers(videos = []) {
+  return videos.map((video) => `<video controls playsinline preload="none" poster="${esc(video.poster)}" aria-label="${esc(video.title)}"><source src="${esc(video.video)}" type="video/mp4"><a href="${esc(video.video)}">Open video</a></video>`).join('');
+}
+
 export function home(data) {
   const { settings: s, services } = data;
   const [haircut] = services;
@@ -27,7 +31,7 @@ export function home(data) {
     ${haircut ? `<p class="home-price">${haircut.duration} min · ${money(haircut.price)}</p>` : ''}
     <div class="page-actions"><a class="button primary" href="/schedule">Book a cut</a><a class="text-link" href="/gallery">Gallery</a></div>
     ${haircut ? '<p class="fine-print">Pay at your appointment.</p>' : ''}
-  </section>${data.homeVideos?.length ? `<section class="section-shell home-videos" aria-label="Haircut videos">${data.homeVideos.map((video) => `<video controls playsinline preload="none" poster="${esc(video.poster)}" aria-label="${esc(video.title)}"><source src="${esc(video.video)}" type="video/mp4"><a href="${esc(video.video)}">Open video</a></video>`).join('')}</section>` : ''}`;
+  </section>${data.homeVideos?.length ? `<section class="section-shell home-videos local-video-grid" aria-label="Haircut videos">${localVideoPlayers(data.homeVideos)}</section>` : ''}`;
 }
 
 export function galleryPage(data) {
