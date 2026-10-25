@@ -8,9 +8,13 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "dev": "node --watch --env-file-if-exists=.env server/index.js",
+    "dev": "node --env-file-if-exists=.env scripts/dev.js",
+    "build": "node scripts/build.js",
     "start": "node --env-file-if-exists=.env server/index.js",
     "admin:create": "node --env-file-if-exists=.env scripts/create-admin.js",
+    "db:migrate": "node --env-file-if-exists=.env scripts/migrate.js",
+    "db:seed": "node --env-file-if-exists=.env scripts/seed.js",
+    "db:import": "node --env-file-if-exists=.env scripts/import-sqlite.js",
     "test": "node --test tests/*.test.js",
     "check": "node scripts/check.js"
   },

@@ -12,5 +12,7 @@ function check(directory) {
     }
   }
 }
-for (const directory of ['server', 'public', 'scripts', 'tests']) check(directory);
+for (const directory of ['api', 'server', 'public', 'scripts', 'tests']) check(directory);
+const config = spawnSync(process.execPath, ['--check', 'vite.config.js'], { stdio: 'inherit' });
+if (config.status !== 0) process.exit(config.status || 1);
 console.log('JavaScript syntax checks passed.');
