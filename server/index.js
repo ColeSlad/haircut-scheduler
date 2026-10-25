@@ -4,6 +4,7 @@ import { resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore } from './store.js';
 import { createApi } from './api.js';
+import { sendVideo } from './media.js';
 
 const publicDir = fileURLToPath(new URL('../public', import.meta.url));
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8' };
@@ -14,18 +15,20 @@ export function appServer({ db = openStore(), origin = 'http://localhost:3000', 
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://images.unsplash.com blob: data:; connect-src 'self'; font-src 'self'; frame-src https://www.tiktok.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://images.unsplash.com blob: data:; media-src 'self'; connect-src 'self'; font-src 'self'; frame-src https://www.tiktok.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
     try {
       const url = new URL(req.url, origin);
       if (url.pathname.startsWith('/api/')) return await api(req, res, url);
       if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }); return res.end(); }
       let path;
       if (['/', '/schedule', '/gallery', '/admin', '/booking'].includes(url.pathname)) path = resolve(publicDir, 'index.html');
-      else if (/^\/uploads\/[a-f0-9-]+\.(jpg|png|webp)$/.test(url.pathname)) path = resolve(dataDir, url.pathname.slice(1));
+      else if (/^\/uploads\/[a-f0-9-]+\.(jpg|png|webp|mp4)$/.test(url.pathname)) path = resolve(dataDir, url.pathname.slice(1));
       else if (/^\/(assets\/[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+\.(css|js|svg|ico))$/.test(url.pathname)) path = resolve(publicDir, url.pathname.slice(1));
-      if (!path || !statSync(path, { throwIfNoEntry: false })?.isFile()) {
+      const file = path && statSync(path, { throwIfNoEntry: false });
+      if (!file?.isFile()) {
         res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('Page not found.');
       }
+      if (extname(path) === '.mp4') return sendVideo(req, res, path, file.size);
       res.writeHead(200, { 'Content-Type': types[extname(path)] || 'application/octet-stream', 'Cache-Control': ['.html', '.js', '.css'].includes(extname(path)) ? 'no-cache' : 'public, max-age=3600' });
       res.end(req.method === 'HEAD' ? undefined : readFileSync(path));
     } catch (error) {
