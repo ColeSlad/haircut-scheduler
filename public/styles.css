@@ -55,6 +55,8 @@ main { flex: 1; }
 .skip-link:focus { top: 12px; }
 .initial-loading, .centered-state { padding-block: 64px; text-align: center; }
 .initial-loading p, .centered-state p { margin: 16px auto; max-width: 520px; }
+.site-logo { display: block; width: 88px; height: 88px; object-fit: contain; }
+.loading-logo { margin-inline: auto; }
 
 /* Shared navigation and controls. */
 .site-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding-block: 22px; border-bottom: 1px solid var(--line); }
