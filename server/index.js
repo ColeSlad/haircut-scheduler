@@ -1,21 +1,19 @@
 import { createServer } from 'node:http';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, statSync, existsSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore } from './store.js';
 import { createApi } from './api.js';
 import { sendVideo } from './media.js';
+import { securityHeaders } from './config.js';
 
-const publicDir = fileURLToPath(new URL('../public', import.meta.url));
+const buildDir = fileURLToPath(new URL('../dist', import.meta.url));
+const publicDir = existsSync(buildDir) ? buildDir : fileURLToPath(new URL('../public', import.meta.url));
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8' };
 export function appServer({ db = openStore(), origin = 'http://localhost:3000', dataDir = resolve(process.env.DATA_DIR || 'data'), provider, storage } = {}) {
   const api = createApi(db, { origin, secure: origin.startsWith('https://'), dataDir, provider, storage });
   return createServer(async (req, res) => {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://images.unsplash.com blob: data:; media-src 'self'; connect-src 'self'; font-src 'self'; frame-src https://www.tiktok.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+    for (const [key, value] of Object.entries(securityHeaders)) res.setHeader(key, value);
     try {
       const url = new URL(req.url, origin);
       if (url.pathname.startsWith('/api/')) return await api(req, res, url);

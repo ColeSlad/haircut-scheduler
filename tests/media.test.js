@@ -40,7 +40,7 @@ test('local videos support full playback and HEAD without reading the body', asy
   assert.equal(full.headers['content-length'], bytes.length);
   assert.equal(full.headers['accept-ranges'], 'bytes');
   assert.deepEqual(full.body, bytes);
-  assert.match(full.headers['content-security-policy'], /media-src 'self';/);
+  assert.match(full.headers['content-security-policy'], /media-src 'self' https:\/\/\*\.public\.blob\.vercel-storage\.com;/);
   const head = await request(undefined, { method: 'HEAD', range: 'bytes=2-5' });
   assert.equal(head.status, 200);
   assert.equal(head.headers['content-length'], bytes.length);

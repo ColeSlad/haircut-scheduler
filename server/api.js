@@ -44,6 +44,10 @@ export function createApi(db, { origin, secure, provider, storage = createStorag
       if (req.headers.origin !== origin || req.headers['sec-fetch-site'] === 'cross-site') throw new HttpError(403, 'This request must come from this website.');
       if (!(req.headers['content-type'] || '').startsWith('application/json')) throw new HttpError(415, 'Send a JSON request.');
     }
+    if (path === '/api/health' && method === 'GET') {
+      await db.prepare('SELECT id FROM settings WHERE id = 1').get().then((row) => { if (!row) throw new HttpError(503, 'Setup incomplete.'); });
+      return json({ ok: true });
+    }
     if (path === '/api/public' && method === 'GET') return json((await publicData(db)));
     if (path === '/api/availability' && method === 'GET') {
       const date = url.searchParams.get('date');
