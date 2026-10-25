@@ -30,21 +30,21 @@ export function toTimestamp(date, time, timezone) {
   }
   return null;
 }
-export function availableSlots(db, date, serviceId = 'haircut', now = Date.now()) {
+export async function availableSlots(db, date, serviceId = 'haircut', now = Date.now()) {
   if (!validDate(date)) throw new HttpError(400, 'Choose a valid date.');
   if (serviceId !== 'haircut') throw new HttpError(400, 'Only haircut appointments can be booked.');
-  const config = settings(db);
-  const service = db.prepare('SELECT * FROM services WHERE id = ? AND active = 1').get(serviceId);
+  const config = (await settings(db));
+  const service = (await db.prepare('SELECT * FROM services WHERE id = ? AND active = 1').get(serviceId));
   if (!service) throw new HttpError(400, 'Choose an available service.');
   const today = localParts(now, config.timezone).date;
   const last = new Date(`${today}T12:00:00Z`);
   last.setUTCDate(last.getUTCDate() + config.bookingDays);
   if (date < today || date > last.toISOString().slice(0, 10)) return [];
   const day = new Date(`${date}T12:00:00Z`).getUTCDay();
-  const hours = db.prepare('SELECT * FROM hours WHERE day = ?').get(day);
-  if (!hours.enabled || db.prepare('SELECT date FROM days_off WHERE date = ?').get(date)) return [];
+  const hours = (await db.prepare('SELECT * FROM hours WHERE day = ?').get(day));
+  if (!hours.enabled || (await db.prepare('SELECT date FROM days_off WHERE date = ?').get(date))) return [];
   const dateUtc = Date.parse(`${date}T12:00:00Z`);
-  const bookings = db.prepare("SELECT starts_at, ends_at FROM bookings WHERE status = 'confirmed' AND ends_at > ? AND starts_at < ?").all(dateUtc - 38 * 60 * 60_000, dateUtc + 38 * 60 * 60_000);
+  const bookings = (await db.prepare("SELECT starts_at, ends_at FROM bookings WHERE status IN ('pending', 'confirmed') AND ends_at > ? AND starts_at < ?").all(dateUtc - 38 * 60 * 60_000, dateUtc + 38 * 60 * 60_000));
   const result = [];
   for (let start = minutes(hours.start); start + service.duration <= minutes(hours.end); start += 15) {
     const time = clock(start);
@@ -60,7 +60,7 @@ export function textField(value, label, max, required = true) {
   if (typeof value !== 'string' || (required && !value.trim()) || value.length > max) throw new HttpError(400, `Enter a valid ${label}${max ? ` (up to ${max} characters)` : ''}.`);
   return value.trim();
 }
-export function createBooking(db, input, now = Date.now()) {
+export async function createBooking(db, input, now = Date.now()) {
   const serviceId = input.serviceId ?? 'haircut';
   const firstName = textField(input.firstName, 'first name', 50);
   const lastName = textField(input.lastName, 'last name', 50);
@@ -69,16 +69,14 @@ export function createBooking(db, input, now = Date.now()) {
   const digits = phone.replace(/\D/g, '');
   if (!/^[+\d\s().-]+$/.test(phone) || digits.length < 7 || digits.length > 15) throw new HttpError(400, 'Enter a valid phone number.');
   if (!validTime(input.time)) throw new HttpError(400, 'Choose a valid time.');
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    const slot = availableSlots(db, input.date, serviceId, now).find((item) => item.time === input.time);
+  return db.transaction(async (db) => {
+    const slot = (await availableSlots(db, input.date, serviceId, now)).find((item) => item.time === input.time);
     if (!slot) throw new HttpError(409, 'That time is no longer available. Please choose another time.');
-    const service = db.prepare('SELECT * FROM services WHERE id = ?').get(serviceId);
+    const service = (await db.prepare('SELECT * FROM services WHERE id = ?').get(serviceId));
     const id = randomUUID();
     const token = randomBytes(32).toString('base64url');
-    db.prepare(`INSERT INTO bookings (id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, token_hash, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, service.id, service.name, service.duration, service.price, input.date, input.time, slot.startsAt, slot.endsAt, name, '', phone, '', tokenHash(token), now);
-    db.exec('COMMIT');
-    return { id, token, serviceName: service.name, duration: service.duration, price: service.price, date: input.date, time: input.time, startsAt: slot.startsAt, endsAt: slot.endsAt, name, status: 'confirmed', timezone: settings(db).timezone };
-  } catch (error) { db.exec('ROLLBACK'); throw error; }
+    (await db.prepare(`INSERT INTO bookings (id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, token_hash, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, service.id, service.name, service.duration, service.price, input.date, input.time, slot.startsAt, slot.endsAt, name, '', phone, '', tokenHash(token), now));
+    return { id, token, serviceName: service.name, duration: service.duration, price: service.price, date: input.date, time: input.time, startsAt: slot.startsAt, endsAt: slot.endsAt, name, status: 'confirmed', timezone: (await settings(db)).timezone };
+  });
 }

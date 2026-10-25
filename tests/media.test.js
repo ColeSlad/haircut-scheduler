@@ -4,18 +4,17 @@ import { Readable, Writable } from 'node:stream';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openStore } from '../server/store.js';
 import { appServer } from '../server/index.js';
 
 function fixture(t) {
-  const db = openStore(':memory:');
+  const db = {};
   const dataDir = mkdtempSync(join(tmpdir(), 'haircut-media-'));
   const bytes = Buffer.from('0123456789abcdefghijklmnopqrstuvwxyz');
   mkdirSync(join(dataDir, 'uploads'));
   writeFileSync(join(dataDir, 'uploads', 'abc-123.mp4'), bytes);
   writeFileSync(join(dataDir, 'uploads', 'abc-456.mp4'), Buffer.alloc(0));
   const server = appServer({ db, origin: 'http://localhost:3000', dataDir });
-  t.after(() => { db.close(); rmSync(dataDir, { recursive: true, force: true }); });
+  t.after(() => { rmSync(dataDir, { recursive: true, force: true }); });
   function request(path = '/uploads/abc-123.mp4', { method = 'GET', range } = {}) {
     return new Promise((resolve, reject) => {
       const req = Readable.from([]);

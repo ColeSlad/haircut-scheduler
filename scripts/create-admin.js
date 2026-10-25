@@ -29,4 +29,4 @@ try {
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;
-} finally { terminal.close(); db.close(); }
+} finally { terminal.close(); await db.close(); }

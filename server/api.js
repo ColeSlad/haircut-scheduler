@@ -5,19 +5,11 @@ import { publicData, settings } from './store.js';
 import { HttpError, availableSlots, createBooking, tokenHash, textField, validDate, validTime, minutes } from './scheduling.js';
 import { createSession, requireAdmin, sessionCookie, verifyPassword, passwordAuthKey, passwordAuthKeys } from './auth.js';
 import { tiktokVideoUrl } from './videos.js';
+import { rateLimit } from './limits.js';
 
 const categories = ['Short cuts', 'Texture', 'Beards', 'Long cuts'];
 export function createApi(db, { origin, secure, dataDir }) {
-  const limits = new Map();
-  const authKeys = () => passwordAuthKeys(db);
-  function rateLimit(req, kind, max, duration) {
-    const key = `${kind}:${req.socket.remoteAddress}`;
-    const now = Date.now();
-    if (limits.size > 10000) for (const [entry, value] of limits) if (value.until < now) limits.delete(entry);
-    let value = limits.get(key);
-    if (!value || value.until < now) { value = { count: 0, until: now + duration }; limits.set(key, value); }
-    if (++value.count > max) throw new HttpError(429, 'Too many attempts. Please try again in a few minutes.');
-  }
+  const authKeys = async () => (await passwordAuthKeys(db));
   return async function api(req, res, url) {
     const path = url.pathname;
     const method = req.method;
@@ -29,67 +21,68 @@ export function createApi(db, { origin, secure, dataDir }) {
       if (req.headers.origin !== origin || req.headers['sec-fetch-site'] === 'cross-site') throw new HttpError(403, 'This request must come from this website.');
       if (!(req.headers['content-type'] || '').startsWith('application/json')) throw new HttpError(415, 'Send a JSON request.');
     }
-    if (path === '/api/public' && method === 'GET') return json(publicData(db));
+    if (path === '/api/public' && method === 'GET') return json((await publicData(db)));
     if (path === '/api/availability' && method === 'GET') {
       const date = url.searchParams.get('date');
-      return json({ slots: availableSlots(db, date, url.searchParams.get('service') ?? undefined), timezone: settings(db).timezone });
+      return json({ slots: (await availableSlots(db, date, url.searchParams.get('service') ?? undefined)), timezone: (await settings(db)).timezone });
     }
     if (path === '/api/bookings' && method === 'POST') {
-      rateLimit(req, 'booking', 20, 60 * 60_000);
+      await rateLimit(db, req, 'booking', 20, 60 * 60_000);
       const input = await readJson(req);
       if (input.website) throw new HttpError(400, 'Unable to book this appointment.');
-      return json(createBooking(db, input), 201);
+      return json((await createBooking(db, input)), 201);
     }
     if (path.startsWith('/api/booking/') && ['GET', 'POST'].includes(method)) {
-      rateLimit(req, 'manage', 120, 10 * 60_000);
+      await rateLimit(db, req, 'manage', 120, 10 * 60_000);
       const token = path.slice('/api/booking/'.length);
       if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new HttpError(404, 'Appointment not found.');
-      const booking = db.prepare('SELECT * FROM bookings WHERE token_hash = ?').get(tokenHash(token));
+      const booking = (await db.prepare('SELECT * FROM bookings WHERE token_hash = ?').get(tokenHash(token)));
       if (!booking) throw new HttpError(404, 'Appointment not found. This private link may be incomplete.');
       if (method === 'POST') {
         const input = await readJson(req);
         if (input.action !== 'cancel') throw new HttpError(400, 'Choose a valid action.');
         if (booking.starts_at <= Date.now()) throw new HttpError(400, 'This appointment has already started. Please contact the studio.');
-        db.prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ?").run(booking.id);
+        (await db.prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ?").run(booking.id));
         booking.status = 'cancelled';
       }
-      return json({ id: booking.id, serviceName: booking.service_name, price: booking.price, duration: booking.duration, date: booking.date, time: booking.time, startsAt: booking.starts_at, endsAt: booking.ends_at, status: booking.status, name: booking.name, timezone: settings(db).timezone });
+      return json({ id: booking.id, serviceName: booking.service_name, price: booking.price, duration: booking.duration, date: booking.date, time: booking.time, startsAt: booking.starts_at, endsAt: booking.ends_at, status: booking.status, name: booking.name, timezone: (await settings(db)).timezone });
     }
     if (path === '/api/admin/session' && method === 'GET') {
       let authenticated = false;
-      try { requireAdmin(db, req, authKeys()); authenticated = true; } catch { /* Visitor is signed out. */ }
-      return json({ authenticated, configured: Boolean(db.prepare('SELECT id FROM admin LIMIT 1').get()) });
+      try { (await requireAdmin(db, req, await authKeys())); authenticated = true; } catch { /* Visitor is signed out. */ }
+      return json({ authenticated, configured: Boolean((await db.prepare('SELECT id FROM admin LIMIT 1').get())) });
     }
     if (['/api/admin/request-code', '/api/admin/verify-code'].includes(path)) throw new HttpError(404, 'This sign-in method is no longer available.');
     if (path === '/api/admin/login' && method === 'POST') {
-      rateLimit(req, 'login', 10, 15 * 60_000);
+      await rateLimit(db, req, 'login', 10, 15 * 60_000);
       const input = await readJson(req);
       const email = textField(input.email, 'email', 254).toLowerCase();
       if (typeof input.password !== 'string' || !input.password || input.password.length > 256) throw new HttpError(400, 'Enter a valid password.');
       const password = input.password;
-      const admin = db.prepare('SELECT * FROM admin WHERE email = ?').get(email);
-      const credential = admin || db.prepare('SELECT * FROM admin ORDER BY id LIMIT 1').get();
+      const admin = (await db.prepare('SELECT * FROM admin WHERE email = ?').get(email));
+      const credential = admin || (await db.prepare('SELECT * FROM admin ORDER BY id LIMIT 1').get());
       const valid = credential ? await verifyPassword(password, credential.password_hash) : false;
       if (!admin || !valid) throw new HttpError(401, 'Email or password is incorrect.');
-      return json({ authenticated: true }, 200, { 'Set-Cookie': sessionCookie(createSession(db, passwordAuthKey(admin)), secure) });
+      return json({ authenticated: true }, 200, { 'Set-Cookie': sessionCookie((await createSession(db, passwordAuthKey(admin))), secure) });
     }
     if (path.startsWith('/api/admin/')) {
-      const session = requireAdmin(db, req, authKeys());
+      const session = (await requireAdmin(db, req, await authKeys()));
       if (path === '/api/admin/logout' && method === 'POST') {
-        db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(session);
+        (await db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(session));
         return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie('', secure) });
       }
       if (path === '/api/admin/data' && method === 'GET') {
-        return json({ ...publicData(db), services: db.prepare("SELECT * FROM services WHERE id = 'haircut'").all(), bookings: db.prepare('SELECT id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, status, created_at FROM bookings ORDER BY starts_at DESC').all(), daysOff: db.prepare('SELECT * FROM days_off ORDER BY date').all() });
+        return json({ ...(await publicData(db)), services: (await db.prepare("SELECT * FROM services WHERE id = 'haircut'").all()), bookings: (await db.prepare('SELECT id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, status, created_at FROM bookings ORDER BY starts_at DESC').all()), daysOff: (await db.prepare('SELECT * FROM days_off ORDER BY date').all()) });
       }
       if (path === '/api/admin/settings' && method === 'PUT') {
         const input = await readJson(req);
-        const config = { ...settings(db) };
+        await db.transaction(async (db) => {
+        const config = { ...(await settings(db)) };
         for (const [key, max] of Object.entries({ name: 50, tagline: 100, description: 600, location: 150, address: 300, timezone: 80, email: 254, phone: 40, instagram: 200, bookingNotice: 500 })) {
           config[key] = textField(input[key], key, max, ['name', 'tagline', 'description', 'timezone', 'location'].includes(key));
         }
         try { new Intl.DateTimeFormat('en', { timeZone: config.timezone }).format(); } catch { throw new HttpError(400, 'Enter a valid IANA time zone, such as America/New_York.'); }
-        if (config.timezone !== settings(db).timezone && db.prepare("SELECT id FROM bookings WHERE status = 'confirmed' AND starts_at > ? LIMIT 1").get(Date.now())) throw new HttpError(400, 'Cancel upcoming appointments before changing the studio time zone.');
+        if (config.timezone !== (await settings(db)).timezone && (await db.prepare("SELECT id FROM bookings WHERE status IN ('pending', 'confirmed') AND starts_at > ? LIMIT 1").get(Date.now()))) throw new HttpError(400, 'Cancel upcoming appointments before changing the studio time zone.');
         if (config.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.email)) throw new HttpError(400, 'Enter a valid contact email.');
         if (config.phone && !/^[+\d\s().-]{7,40}$/.test(config.phone)) throw new HttpError(400, 'Enter a valid studio phone number.');
         if (config.instagram && !/^https:\/\/(www\.)?instagram\.com\/[A-Za-z0-9_.]+\/?$/.test(config.instagram)) throw new HttpError(400, 'Use a full Instagram profile URL.');
@@ -97,7 +90,8 @@ export function createApi(db, { origin, secure, dataDir }) {
           if (!Number.isInteger(input[key]) || input[key] < min || input[key] > max) throw new HttpError(400, `Invalid ${key}.`);
           config[key] = input[key];
         }
-        db.prepare('UPDATE settings SET value = ? WHERE id = 1').run(JSON.stringify(config));
+        (await db.prepare('UPDATE settings SET value = ? WHERE id = 1').run(JSON.stringify(config)));
+        });
         return json({ ok: true });
       }
       if (path === '/api/admin/hours' && method === 'PUT') {
@@ -110,13 +104,11 @@ export function createApi(db, { origin, secure, dataDir }) {
         if (!Array.isArray(daysOff) || daysOff.length > 365) throw new HttpError(400, 'Too many days off.');
         for (const row of daysOff) { if (!row || !validDate(row.date)) throw new HttpError(400, 'Enter a valid day off.'); textField(row.note || '', 'day off note', 150, false); }
         if (new Set(daysOff.map((day) => day.date)).size !== daysOff.length) throw new HttpError(400, 'A day off was added twice.');
-        db.exec('BEGIN IMMEDIATE');
-        try {
-          for (const row of hours) db.prepare('UPDATE hours SET enabled = ?, start = ?, end = ? WHERE day = ?').run(row.enabled, row.start, row.end, row.day);
-          db.exec('DELETE FROM days_off');
-          for (const row of daysOff) db.prepare('INSERT INTO days_off VALUES (?, ?)').run(row.date, row.note || '');
-          db.exec('COMMIT');
-        } catch (error) { db.exec('ROLLBACK'); throw error; }
+        await db.transaction(async (db) => {
+          for (const row of hours) (await db.prepare('UPDATE hours SET enabled = ?, start = ?, "end" = ? WHERE day = ?').run(row.enabled, row.start, row.end, row.day));
+          await db.exec('DELETE FROM days_off');
+          for (const row of daysOff) (await db.prepare('INSERT INTO days_off VALUES (?, ?)').run(row.date, row.note || ''));
+        });
         return json({ ok: true });
       }
       if (path === '/api/admin/videos' && method === 'PUT') {
@@ -135,12 +127,10 @@ export function createApi(db, { origin, secure, dataDir }) {
           urls.add(url);
           return [id, title, url, position];
         });
-        db.exec('BEGIN IMMEDIATE');
-        try {
-          db.exec('DELETE FROM videos');
-          for (const row of rows) db.prepare('INSERT INTO videos VALUES (?, ?, ?, ?)').run(...row);
-          db.exec('COMMIT');
-        } catch (error) { db.exec('ROLLBACK'); throw error; }
+        await db.transaction(async (db) => {
+          await db.exec('DELETE FROM videos');
+          for (const row of rows) (await db.prepare('INSERT INTO videos VALUES (?, ?, ?, ?)').run(...row));
+        });
         return json({ ok: true });
       }
       if (path === '/api/admin/services' && method === 'PUT') {
@@ -150,7 +140,7 @@ export function createApi(db, { origin, secure, dataDir }) {
         if (service?.id !== 'haircut' || ![true, 1].includes(service.active)) throw new HttpError(400, 'Keep the haircut service available.');
         if (!Number.isInteger(service.duration) || service.duration < 15 || service.duration > 180 || service.duration % 15) throw new HttpError(400, 'Haircut duration must be 15–180 minutes in 15-minute increments.');
         if (!Number.isInteger(service.price) || service.price < 0 || service.price > 100000) throw new HttpError(400, 'Price must be between $0 and $1,000.');
-        db.prepare("UPDATE services SET duration = ?, price = ? WHERE id = 'haircut'").run(service.duration, service.price);
+        (await db.prepare("UPDATE services SET duration = ?, price = ? WHERE id = 'haircut'").run(service.duration, service.price));
         return json({ ok: true });
       }
       if (path === '/api/admin/reviews' && method === 'PUT') {
@@ -167,17 +157,17 @@ export function createApi(db, { origin, secure, dataDir }) {
           if (typeof item.sample !== 'boolean') throw new HttpError(400, 'Choose whether this is a placeholder review.');
           return { id, name: textField(item.name, 'reviewer name', 80), text: textField(item.text, 'review text', 600), stars: item.stars, sample: item.sample };
         });
-        db.prepare('UPDATE review_content SET value = ? WHERE id = 1').run(JSON.stringify({ rating, items: reviews }));
+        (await db.prepare('UPDATE review_content SET value = ? WHERE id = 1').run(JSON.stringify({ rating, items: reviews })));
         return json({ ok: true });
       }
       if (/^\/api\/admin\/bookings\/[^/]+$/.test(path) && method === 'PATCH') {
         const { status } = await readJson(req);
         if (!['cancelled', 'completed', 'no-show'].includes(status)) throw new HttpError(400, 'Choose a valid appointment status.');
-        const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(path.split('/').at(-1));
+        const booking = (await db.prepare('SELECT * FROM bookings WHERE id = ?').get(path.split('/').at(-1)));
         if (!booking) throw new HttpError(404, 'Appointment not found.');
         if (booking.status !== 'confirmed') throw new HttpError(400, 'This appointment has already been updated.');
         if (status !== 'cancelled' && booking.ends_at > Date.now()) throw new HttpError(400, 'Complete the appointment after its scheduled end time.');
-        db.prepare('UPDATE bookings SET status = ? WHERE id = ?').run(status, booking.id);
+        (await db.prepare('UPDATE bookings SET status = ? WHERE id = ?').run(status, booking.id));
         return json({ ok: true });
       }
       if (path === '/api/admin/gallery' && method === 'PUT') {
@@ -196,12 +186,10 @@ export function createApi(db, { origin, secure, dataDir }) {
           if (!/^\/(assets\/[A-Za-z0-9_.-]+|uploads\/[a-f0-9-]+\.(jpg|png|webp))$/.test(image)) throw new HttpError(400, 'Upload a photo before saving it.');
           return [id, title, item.category, image, alt, item.sample ? 1 : 0, position];
         });
-        db.exec('BEGIN IMMEDIATE');
-        try {
-          db.exec('DELETE FROM gallery');
-          for (const row of rows) db.prepare('INSERT INTO gallery VALUES (?, ?, ?, ?, ?, ?, ?)').run(...row);
-          db.exec('COMMIT');
-        } catch (error) { db.exec('ROLLBACK'); throw error; }
+        await db.transaction(async (db) => {
+          await db.exec('DELETE FROM gallery');
+          for (const row of rows) (await db.prepare('INSERT INTO gallery VALUES (?, ?, ?, ?, ?, ?, ?)').run(...row));
+        });
         return json({ ok: true });
       }
       if (path === '/api/admin/upload' && method === 'POST') {
