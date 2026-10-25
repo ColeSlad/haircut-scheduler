@@ -89,6 +89,8 @@ main { flex: 1; }
 .home-intro > p { max-width: 600px; }
 .home-intro > .home-price { margin-top: 20px; font-size: 18px; color: var(--ink); }
 .home-intro > .fine-print { margin-top: 16px; }
+.home-videos { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; padding-bottom: 48px; }
+.home-videos video { display: block; width: 100%; aspect-ratio: 9 / 16; object-fit: contain; border-radius: 4px; background: #111; }
 .page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; margin-top: 24px; }
 .gallery-section { padding-bottom: 48px; }
 .gallery-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; }
@@ -286,6 +288,7 @@ code { font-family: monospace; background: var(--soft); padding: 2px 4px; font-s
 @media (max-width: 900px) {
   .booking-layout { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .booking-summary { max-width: 500px; }
+  .home-videos { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 640px) {
@@ -298,6 +301,7 @@ code { font-family: monospace; background: var(--soft); padding: 2px 4px; font-s
   .page-intro, .booking-intro { padding-block: 28px 24px; }
   .page-intro > p, .booking-intro > p { font-size: 15px; }
   .home-intro { padding-bottom: 32px; }
+  .home-videos { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding-bottom: 36px; }
   .work-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 16px; }
   .video-grid { grid-template-columns: minmax(0, 1fr); max-width: 400px; margin-inline: auto; gap: 28px; }
   .work-caption h3 { font-size: 14px; }

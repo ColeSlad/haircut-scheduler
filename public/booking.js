@@ -1,4 +1,4 @@
-import { $, $$, esc, money, timeLabel, dateLabel, todayIn, addDays, api, arrow, chevron, smallIcon, toast, loadingButton, fieldError } from './shared.js?v=8';
+import { $, $$, esc, money, timeLabel, dateLabel, todayIn, addDays, api, arrow, chevron, smallIcon, toast, loadingButton, fieldError } from './shared.js?v=10';
 
 export function mountScheduler(data, navigate) {
   const root = $('#main');

@@ -22,13 +22,13 @@ A new email adds an admin; entering an existing email resets only that account�
 
 ## What’s included
 
-- **Landing page** (`/`): a short introduction, haircut price/duration, booking button, and gallery link.
+- **Landing page** (`/`): a short introduction, haircut price/duration, booking button, gallery link, and local haircut videos with playback controls.
 - **Booking** (`/schedule`): choose an available date/time, then enter your first name, last name, and phone number. No email address or notes are collected. Prices are in USD, with payment at the appointment.
 - **Confirmation** (`/booking#private-token`): appointment details, a private cancellation link, and an `.ics` calendar download. The token stays in the URL fragment rather than server access logs.
 - **Gallery** (`/gallery`): playable TikTok videos from [@l2cuts](https://www.tiktok.com/@l2cuts), photo categories, sample-image labeling, and responsive layouts.
 - **Admin** (`/admin`): appointment search and status updates, weekly hours, full days off, haircut price/duration edits, photo uploads, TikTok video links/titles, and studio details.
 
-Appointments, admin accounts, sessions, and settings persist in SQLite. Gallery uploads persist on disk. Booking validation and conflict checks run in an immediate database transaction so two clients cannot reserve overlapping time for the same barber.
+Appointments, admin accounts, sessions, settings, and homepage video metadata persist in SQLite. Gallery uploads and homepage video files persist on disk. Booking validation and conflict checks run in an immediate database transaction so two clients cannot reserve overlapping time for the same barber.
 
 ## Defaults and booking rules
 
@@ -65,6 +65,8 @@ Passwords use salted scrypt hashes. Admin sessions use random tokens stored as h
 Client confirmation emails/texts, payment processing, external calendar synchronization, and self-service rescheduling are not configured. The confirmation screen explicitly tells clients to save their private management link; no confirmation email is promised. Calendar download works without a calendar integration. Appointment status changes do not send messages.
 
 The TikTok gallery starts with three public videos from @l2cuts. Add or remove full video URLs in the admin’s TikTok videos tab. Videos use TikTok’s embedded player and require TikTok to be available; each card also links to the original video. New TikTok posts are added manually rather than automatically synced.
+
+Homepage clips use local MP4 files and JPEG posters in ignored `data/uploads/`, with titles and ordering in the `home_videos` database table. They load on demand and do not autoplay. Include these runtime files and the database when moving the app to another server; personal media is not committed to Git.
 
 The app bundles [Playfair Display](https://fonts.google.com/specimen/Playfair+Display) for its typography. The font is served locally, with its [SIL Open Font License](public/assets/playfair-display-OFL.txt) included.
 

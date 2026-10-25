@@ -1,4 +1,4 @@
-import { esc, money, imageEvents, $, $$ } from './shared.js?v=8';
+import { esc, money, imageEvents, $, $$ } from './shared.js?v=10';
 
 const photos = [
   'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?auto=format&fit=crop&w=800&q=85',
@@ -27,7 +27,7 @@ export function home(data) {
     ${haircut ? `<p class="home-price">${haircut.duration} min · ${money(haircut.price)}</p>` : ''}
     <div class="page-actions"><a class="button primary" href="/schedule">Book a cut</a><a class="text-link" href="/gallery">Gallery</a></div>
     ${haircut ? '<p class="fine-print">Pay at your appointment.</p>' : ''}
-  </section>`;
+  </section>${data.homeVideos?.length ? `<section class="section-shell home-videos" aria-label="Haircut videos">${data.homeVideos.map((video) => `<video controls playsinline preload="none" poster="${esc(video.poster)}" aria-label="${esc(video.title)}"><source src="${esc(video.video)}" type="video/mp4"><a href="${esc(video.video)}">Open video</a></video>`).join('')}</section>` : ''}`;
 }
 
 export function galleryPage(data) {
