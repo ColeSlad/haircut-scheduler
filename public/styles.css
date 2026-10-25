@@ -277,7 +277,9 @@ code { font-family: monospace; background: var(--soft); padding: 2px 4px; font-s
 .upload-status { display: block; font-size: 13px; color: var(--muted); margin-top: 8px; }
 .gallery-editor > .form-grid { margin-top: 0; }
 .gallery-editor .remove-row { justify-self: start; }
-#settings-form { max-width: 900px; }
+#settings-form, #reviews-form { max-width: 900px; }
+.review-rating-input { max-width: 240px; }
+.review-rating-input + .fine-print { margin-top: 12px; }
 
 @media (max-width: 900px) {
   .booking-layout { grid-template-columns: minmax(0, 1fr); gap: 28px; }

@@ -1,4 +1,4 @@
-import { esc, money } from './shared.js?v=11';
+import { esc, money } from './shared.js?v=12';
 
 const photos = [
   'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?auto=format&fit=crop&w=800&q=85',
