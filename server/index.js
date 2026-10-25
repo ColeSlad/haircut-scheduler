@@ -8,8 +8,8 @@ import { sendVideo } from './media.js';
 
 const publicDir = fileURLToPath(new URL('../public', import.meta.url));
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8' };
-export function appServer({ db = openStore(), origin = 'http://localhost:3000', dataDir = resolve(process.env.DATA_DIR || 'data') } = {}) {
-  const api = createApi(db, { origin, secure: origin.startsWith('https://'), dataDir });
+export function appServer({ db = openStore(), origin = 'http://localhost:3000', dataDir = resolve(process.env.DATA_DIR || 'data'), provider } = {}) {
+  const api = createApi(db, { origin, secure: origin.startsWith('https://'), dataDir, provider });
   return createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -34,7 +34,7 @@ export function appServer({ db = openStore(), origin = 'http://localhost:3000', 
     } catch (error) {
       if (res.headersSent) return res.end();
       const status = error.status || 500;
-      if (status === 500) console.error(error);
+      if (status === 500) console.error('request_failed', error.code || error.name);
       res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
       res.end(JSON.stringify({ error: status === 500 ? 'Something went wrong. Please try again.' : error.message }));
     }

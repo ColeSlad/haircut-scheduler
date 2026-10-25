@@ -1,4 +1,6 @@
 import { test } from 'node:test';
+import { randomUUID } from 'node:crypto';
+import { fakeProvider } from './fake-stripe.js';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import { mkdtempSync, rmSync, readdirSync } from 'node:fs';
@@ -14,11 +16,13 @@ const origin = 'http://localhost:3000';
 async function fixture(t) {
   const db = await testDatabase(t);
   const dataDir = mkdtempSync(join(tmpdir(), 'haircut-test-'));
-  const server = appServer({ db, origin, dataDir });
+  const provider = fakeProvider();
+  const server = appServer({ db, origin, dataDir, provider });
   const password = ' secure-test-password ';
   (await db.prepare('INSERT INTO admin VALUES (1, ?, ?)').run('admin@example.com', await hashPassword(password)));
   t.after(() => { rmSync(dataDir, { recursive: true, force: true }); });
   function request(path, { method = 'GET', body, headers = {} } = {}) {
+    if (path === '/api/bookings' && body && typeof body === 'object') body = { requestId: randomUUID(), ...body };
     return new Promise((resolve, reject) => {
       const req = Readable.from(body === undefined ? [] : [Buffer.from(typeof body === 'string' ? body : JSON.stringify(body))]);
       Object.assign(req, { method, url: path, headers: { origin, 'content-type': 'application/json', ...headers }, socket: { remoteAddress: '127.0.0.1' } });
@@ -37,7 +41,7 @@ async function fixture(t) {
     assert.equal(result.status, 200);
     return result.headers['set-cookie'].split(';')[0];
   }
-  return { db, request, login, dataDir };
+  return { db, request, login, dataDir, provider };
 }
 async function futureSlot(db) {
   const now = Date.now();
@@ -129,18 +133,22 @@ test('cross-origin and malformed JSON requests are rejected', async (t) => {
   assert.equal((await request('/api/bookings', { method: 'POST', body: '{broken' })).status, 400);
 });
 test('a visitor books without an account, cannot double book, and can cancel via the private token', async (t) => {
-  const { db, request } = await fixture(t);
+  const { db, request, provider } = await fixture(t);
   const input = (await futureSlot(db));
   const booked = await request('/api/bookings', { method: 'POST', body: input });
   assert.equal(booked.status, 201);
   assert.equal((await request('/api/bookings', { method: 'POST', body: input })).status, 409);
-  const path = `/api/booking/${booked.body.token}`;
-  const view = await request(path);
+  assert.equal(booked.body.token, undefined);
+  const token = booked.headers['set-cookie'].split(';')[0].split('=')[1];
+  const path = '/api/booking';
+  const headers = { authorization: `Bearer ${token}` };
+  provider.payBooking(booked.body.id);
+  const view = await request(path, { headers });
   assert.equal(view.body.name, `${input.firstName} ${input.lastName}`);
   assert.equal(view.body.email, undefined);
   assert.equal(view.body.token_hash, undefined);
   assert.equal((await request('/api/booking/bad-token')).status, 404);
-  assert.equal((await request(path, { method: 'POST', body: { action: 'cancel' } })).body.status, 'cancelled');
+  assert.equal((await request(path, { method: 'POST', body: { action: 'cancel' }, headers })).body.status, 'cancelled');
   assert.equal((await request('/api/bookings', { method: 'POST', body: input })).status, 201);
 });
 test('simultaneous booking requests create only one appointment', async (t) => {
@@ -228,6 +236,7 @@ test('admin can upload real images; executable and oversized uploads are rejecte
 test('admin can cancel appointments without exposing management tokens', async (t) => {
   const { db, request, login } = await fixture(t);
   const booked = (await createBooking(db, (await futureSlot(db))));
+  await db.prepare("UPDATE bookings SET status = 'confirmed' WHERE id = ?").run(booked.id);
   const headers = { cookie: await login() };
   const data = await request('/api/admin/data', { headers });
   assert.equal(data.body.bookings[0].token_hash, undefined);

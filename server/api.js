@@ -2,13 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { publicData, settings } from './store.js';
-import { HttpError, availableSlots, createBooking, tokenHash, textField, validDate, validTime, minutes } from './scheduling.js';
-import { createSession, requireAdmin, sessionCookie, verifyPassword, passwordAuthKey, passwordAuthKeys } from './auth.js';
+import { HttpError, availableSlots, tokenHash, textField, validDate, validTime, minutes } from './scheduling.js';
+import { createSession, requireAdmin, sessionCookie, verifyPassword, passwordAuthKey, passwordAuthKeys, readCookie } from './auth.js';
 import { tiktokVideoUrl } from './videos.js';
 import { rateLimit } from './limits.js';
+import { createPayments } from './payments.js';
 
 const categories = ['Short cuts', 'Texture', 'Beards', 'Long cuts'];
-export function createApi(db, { origin, secure, dataDir }) {
+export function createApi(db, { origin, secure, dataDir, provider }) {
+  const payments = createPayments(db, { origin, provider });
   const authKeys = async () => (await passwordAuthKeys(db));
   return async function api(req, res, url) {
     const path = url.pathname;
@@ -17,6 +19,23 @@ export function createApi(db, { origin, secure, dataDir }) {
       res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
       res.end(JSON.stringify(value));
     };
+    if (path === '/api/stripe/webhook' && method === 'POST') {
+      await payments.webhook(await readRaw(req), req.headers['stripe-signature']);
+      return json({ received: true });
+    }
+    if (path === '/api/cron/payments' && method === 'GET') {
+      if (!process.env.CRON_SECRET || tokenHash(req.headers.authorization || '') !== tokenHash(`Bearer ${process.env.CRON_SECRET}`)) throw new HttpError(401, 'Unauthorized.');
+      return json(await payments.sweep());
+    }
+    if (/^\/api\/checkout\/return\/[a-f0-9-]{36}$/.test(path) && method === 'GET') {
+      const id = path.split('/').at(-1);
+      const token = readCookie(req, `checkout_${id}`);
+      const booking = await db.prepare('SELECT * FROM bookings WHERE id = ? AND token_hash = ?').get(id, tokenHash(token));
+      if (!booking) { res.writeHead(303, { Location: '/booking', 'Cache-Control': 'no-store' }); return res.end(); }
+      try { await payments.reconcile(id); } catch { /* Private page will show a pending state and retry verification. */ }
+      res.writeHead(303, { Location: `/booking#${token}`, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+      return res.end();
+    }
     if (!['GET', 'HEAD'].includes(method)) {
       if (req.headers.origin !== origin || req.headers['sec-fetch-site'] === 'cross-site') throw new HttpError(403, 'This request must come from this website.');
       if (!(req.headers['content-type'] || '').startsWith('application/json')) throw new HttpError(415, 'Send a JSON request.');
@@ -30,22 +49,25 @@ export function createApi(db, { origin, secure, dataDir }) {
       await rateLimit(db, req, 'booking', 20, 60 * 60_000);
       const input = await readJson(req);
       if (input.website) throw new HttpError(400, 'Unable to book this appointment.');
-      return json((await createBooking(db, input)), 201);
+      const checkout = await payments.start(input);
+      return json({ id: checkout.id, checkoutUrl: checkout.checkoutUrl }, 201, {
+        'Set-Cookie': `checkout_${checkout.id}=${checkout.token}; HttpOnly; SameSite=Lax; Path=/api/checkout/return/${checkout.id}; Max-Age=86400${secure ? '; Secure' : ''}`,
+      });
     }
-    if (path.startsWith('/api/booking/') && ['GET', 'POST'].includes(method)) {
+    if (path === '/api/booking' && ['GET', 'POST'].includes(method)) {
       await rateLimit(db, req, 'manage', 120, 10 * 60_000);
-      const token = path.slice('/api/booking/'.length);
+      const token = (req.headers.authorization || '').replace(/^Bearer /, '');
       if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new HttpError(404, 'Appointment not found.');
-      const booking = (await db.prepare('SELECT * FROM bookings WHERE token_hash = ?').get(tokenHash(token)));
+      let booking = (await db.prepare('SELECT * FROM bookings WHERE token_hash = ?').get(tokenHash(token)));
       if (!booking) throw new HttpError(404, 'Appointment not found. This private link may be incomplete.');
       if (method === 'POST') {
         const input = await readJson(req);
         if (input.action !== 'cancel') throw new HttpError(400, 'Choose a valid action.');
-        if (booking.starts_at <= Date.now()) throw new HttpError(400, 'This appointment has already started. Please contact the studio.');
-        (await db.prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ?").run(booking.id));
-        booking.status = 'cancelled';
+        booking = await payments.cancel(booking.id);
+      } else if (booking.status === 'pending') {
+        try { booking = await payments.reconcile(booking.id); } catch { /* Never report confirmation without provider verification. */ }
       }
-      return json({ id: booking.id, serviceName: booking.service_name, price: booking.price, duration: booking.duration, date: booking.date, time: booking.time, startsAt: booking.starts_at, endsAt: booking.ends_at, status: booking.status, name: booking.name, timezone: (await settings(db)).timezone });
+      return json({ id: booking.id, serviceName: booking.service_name, price: booking.price, duration: booking.duration, date: booking.date, time: booking.time, startsAt: booking.starts_at, endsAt: booking.ends_at, status: booking.status, paymentStatus: booking.payment_status, amountRefunded: booking.amount_refunded, checkoutUrl: booking.status === 'pending' ? booking.checkout_url : null, name: booking.name, timezone: (await settings(db)).timezone });
     }
     if (path === '/api/admin/session' && method === 'GET') {
       let authenticated = false;
@@ -72,7 +94,7 @@ export function createApi(db, { origin, secure, dataDir }) {
         return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie('', secure) });
       }
       if (path === '/api/admin/data' && method === 'GET') {
-        return json({ ...(await publicData(db)), services: (await db.prepare("SELECT * FROM services WHERE id = 'haircut'").all()), bookings: (await db.prepare('SELECT id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, status, created_at FROM bookings ORDER BY starts_at DESC').all()), daysOff: (await db.prepare('SELECT * FROM days_off ORDER BY date').all()) });
+        return json({ ...(await publicData(db)), services: (await db.prepare("SELECT * FROM services WHERE id = 'haircut'").all()), bookings: (await db.prepare('SELECT id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, status, created_at, payment_status, payment_intent_id, amount_refunded FROM bookings ORDER BY starts_at DESC').all()), daysOff: (await db.prepare('SELECT * FROM days_off ORDER BY date').all()) });
       }
       if (path === '/api/admin/settings' && method === 'PUT') {
         const input = await readJson(req);
@@ -139,7 +161,7 @@ export function createApi(db, { origin, secure, dataDir }) {
         const service = services[0];
         if (service?.id !== 'haircut' || ![true, 1].includes(service.active)) throw new HttpError(400, 'Keep the haircut service available.');
         if (!Number.isInteger(service.duration) || service.duration < 15 || service.duration > 180 || service.duration % 15) throw new HttpError(400, 'Haircut duration must be 15–180 minutes in 15-minute increments.');
-        if (!Number.isInteger(service.price) || service.price < 0 || service.price > 100000) throw new HttpError(400, 'Price must be between $0 and $1,000.');
+        if (!Number.isInteger(service.price) || service.price < 50 || service.price > 100000) throw new HttpError(400, 'Price must be between $0.50 and $1,000.');
         (await db.prepare("UPDATE services SET duration = ?, price = ? WHERE id = 'haircut'").run(service.duration, service.price));
         return json({ ok: true });
       }
@@ -165,9 +187,11 @@ export function createApi(db, { origin, secure, dataDir }) {
         if (!['cancelled', 'completed', 'no-show'].includes(status)) throw new HttpError(400, 'Choose a valid appointment status.');
         const booking = (await db.prepare('SELECT * FROM bookings WHERE id = ?').get(path.split('/').at(-1)));
         if (!booking) throw new HttpError(404, 'Appointment not found.');
-        if (booking.status !== 'confirmed') throw new HttpError(400, 'This appointment has already been updated.');
+        if (!['confirmed', 'pending'].includes(booking.status)) throw new HttpError(400, 'This appointment has already been updated.');
+        if (booking.status === 'pending' && status !== 'cancelled') throw new HttpError(400, 'Payment has not been confirmed.');
         if (status !== 'cancelled' && booking.ends_at > Date.now()) throw new HttpError(400, 'Complete the appointment after its scheduled end time.');
-        (await db.prepare('UPDATE bookings SET status = ? WHERE id = ?').run(status, booking.id));
+        if (status === 'cancelled') await payments.cancel(booking.id);
+        else await db.prepare("UPDATE bookings SET status = ? WHERE id = ? AND status = 'confirmed'").run(status, booking.id);
         return json({ ok: true });
       }
       if (path === '/api/admin/gallery' && method === 'PUT') {
@@ -212,12 +236,16 @@ export function createApi(db, { origin, secure, dataDir }) {
   };
 }
 
-async function readJson(req, max = 100_000) {
+export async function readRaw(req, max = 100_000) {
   const chunks = [];
   let size = 0;
   for await (const chunk of req) { size += chunk.length; if (size > max) throw new HttpError(413, 'This request is too large.'); chunks.push(chunk); }
+  return Buffer.concat(chunks);
+}
+async function readJson(req, max = 100_000) {
+  const raw = await readRaw(req, max);
   try {
-    const value = JSON.parse(Buffer.concat(chunks).toString());
+    const value = JSON.parse(raw.toString());
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
     return value;
   } catch { throw new HttpError(400, 'The request could not be read. Please try again.'); }
