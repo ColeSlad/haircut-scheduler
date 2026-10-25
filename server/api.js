@@ -25,7 +25,7 @@ export function createApi(db, { origin, secure, provider, storage = createStorag
     if (path === '/api/admin/upload' && method === 'POST' && req.headers['x-vercel-signature']) {
       const body = await readJson(req);
       if (body.type !== 'blob.upload-completed') throw new HttpError(400, 'Invalid storage callback.');
-      return json(await storage.handle(req, body, () => requireAdmin(db, req, authKeys())));
+      return json(await storage.handle(req, body, async () => requireAdmin(db, req, await authKeys())));
     }
     if (path === '/api/cron/payments' && method === 'GET') {
       if (!process.env.CRON_SECRET || tokenHash(req.headers.authorization || '') !== tokenHash(`Bearer ${process.env.CRON_SECRET}`)) throw new HttpError(401, 'Unauthorized.');
@@ -98,7 +98,7 @@ export function createApi(db, { origin, secure, provider, storage = createStorag
         return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie('', secure) });
       }
       if (path === '/api/admin/data' && method === 'GET') {
-        return json({ ...(await publicData(db)), services: (await db.prepare("SELECT * FROM services WHERE id = 'haircut'").all()), bookings: (await db.prepare('SELECT id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, status, created_at, payment_status, payment_intent_id, amount_refunded FROM bookings ORDER BY starts_at DESC').all()), daysOff: (await db.prepare('SELECT * FROM days_off ORDER BY date').all()) });
+        return json({ ...(await publicData(db)), services: (await db.prepare("SELECT * FROM services WHERE id = 'haircut'").all()), bookings: (await db.prepare(`SELECT id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, status, created_at, payment_status, payment_intent_id, amount_refunded, CASE WHEN checkout_session_id LIKE 'cs_test_%' THEN 'test' ELSE 'live' END AS payment_mode FROM bookings ORDER BY starts_at DESC`).all()), daysOff: (await db.prepare('SELECT * FROM days_off ORDER BY date').all()) });
       }
       if (path === '/api/admin/settings' && method === 'PUT') {
         const input = await readJson(req);
