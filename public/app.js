@@ -1,7 +1,7 @@
-import { $, esc, imageEvents, api } from './shared.js?v=10';
-import { home, galleryPage, mountGallery } from './pages.js?v=10';
-import { mountScheduler, mountConfirmation } from './booking.js?v=10';
-import { mountAdmin } from './admin.js?v=10';
+import { $, esc, imageEvents, api } from './shared.js?v=11';
+import { home, galleryPage } from './pages.js?v=11';
+import { mountScheduler, mountConfirmation } from './booking.js?v=11';
+import { mountAdmin } from './admin.js?v=11';
 let data;
 let routeId = 0;
 const app = $('#app');
@@ -35,7 +35,6 @@ async function render() {
     if (!robots) { robots = document.createElement('meta'); robots.name = 'robots'; document.head.append(robots); }
     robots.content = ['/admin', '/booking'].includes(path) ? 'noindex, nofollow' : 'index, follow';
     app.innerHTML = `${header(path)}<main id="main" tabindex="-1">${path === '/' ? home(data) : path === '/gallery' ? galleryPage(data) : ''}</main>${footer()}`;
-    if (path === '/gallery') mountGallery(data);
     if (path === '/schedule') mountScheduler(data, navigate);
     if (path === '/booking') await mountConfirmation(data, navigate);
     if (path === '/admin') await mountAdmin(data, { navigate, refreshData });

@@ -1,5 +1,5 @@
-import { $, $$, esc, money, timeLabel, dateLabel, todayIn, dayNames, categories, api, arrow, smallIcon, toast, loadingButton, fieldError, imageEvents } from './shared.js?v=10';
-import { galleryImage } from './pages.js?v=10';
+import { $, $$, esc, money, timeLabel, dateLabel, todayIn, dayNames, categories, api, arrow, smallIcon, toast, loadingButton, fieldError, imageEvents } from './shared.js?v=11';
+import { galleryImage } from './pages.js?v=11';
 
 export async function mountAdmin(publicData, { refreshData }) {
   const root = $('#main');

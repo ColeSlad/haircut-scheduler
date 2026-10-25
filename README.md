@@ -2,7 +2,7 @@
 
 A complete starting point for a single barber: a studio landing page, online appointment scheduling, a photo and TikTok video gallery, and an email/password-protected admin workspace for up to two admins. Clients book without an account.
 
-The starter brand is **goodform.**, with an editable haircut price and duration, hours, and location. Gallery samples are clearly labeled as inspiration. Replace the defaults in the admin area before taking real bookings.
+The starter brand is **goodform.**, with an editable haircut price and duration, hours, and location. Replace the defaults in the admin area before taking real bookings.
 
 ## Run locally
 
@@ -25,7 +25,7 @@ A new email adds an admin; entering an existing email resets only that account�
 - **Landing page** (`/`): a short introduction, haircut price/duration, booking button, gallery link, and local haircut videos with playback controls.
 - **Booking** (`/schedule`): choose an available date/time, then enter your first name, last name, and phone number. No email address or notes are collected. Prices are in USD, with payment at the appointment.
 - **Confirmation** (`/booking#private-token`): appointment details, a private cancellation link, and an `.ics` calendar download. The token stays in the URL fragment rather than server access logs.
-- **Gallery** (`/gallery`): playable TikTok videos from [@l2cuts](https://www.tiktok.com/@l2cuts), photo categories, sample-image labeling, and responsive layouts.
+- **Gallery** (`/gallery`): playable TikTok videos from [@l2cuts](https://www.tiktok.com/@l2cuts) and the same local haircut clips shown on the homepage, with responsive layouts.
 - **Admin** (`/admin`): appointment search and status updates, weekly hours, full days off, haircut price/duration edits, photo uploads, TikTok video links/titles, and studio details.
 
 Appointments, admin accounts, sessions, settings, and homepage video metadata persist in SQLite. Gallery uploads and homepage video files persist on disk. Booking validation and conflict checks run in an immediate database transaction so two clients cannot reserve overlapping time for the same barber.
@@ -66,11 +66,11 @@ Client confirmation emails/texts, payment processing, external calendar synchron
 
 The TikTok gallery starts with three public videos from @l2cuts. Add or remove full video URLs in the admin’s TikTok videos tab. Videos use TikTok’s embedded player and require TikTok to be available; each card also links to the original video. New TikTok posts are added manually rather than automatically synced.
 
-Homepage clips use local MP4 files and JPEG posters in ignored `data/uploads/`, with titles and ordering in the `home_videos` database table. They load on demand and do not autoplay. Include these runtime files and the database when moving the app to another server; personal media is not committed to Git.
+The homepage and gallery share local MP4 clips and JPEG posters in ignored `data/uploads/`, with titles and ordering in the `home_videos` database table. They load on demand and do not autoplay. Include these runtime files and the database when moving the app to another server; personal media is not committed to Git.
 
 The app bundles [Playfair Display](https://fonts.google.com/specimen/Playfair+Display) for its typography. The font is served locally, with its [SIL Open Font License](public/assets/playfair-display-OFL.txt) included.
 
-The sample photo gallery uses remote Unsplash images. A plain placeholder appears if images cannot load. Upload the barber’s own images in the admin area to replace the gallery samples.
+Saved photos and labeled samples remain available in admin. The public gallery displays videos in place of the former Photos section.
 
 ## Project layout
 
@@ -90,4 +90,4 @@ npm test
 
 The automated suite covers availability and service durations, overlap prevention (including competing requests), cancellation, studio time zones/DST, authentication and session revocation, CSRF protection, admin edits, image upload restrictions, and private-data access. It runs against isolated temporary or in-memory databases without opening a network port.
 
-Browser verification should cover desktop and mobile layouts, the full booking/confirmation flow, gallery filtering, both admin email/password logins and independent logout, a days-off change, a photo upload, and cancellation. Automated API tests do not replace those browser checks.
+Browser verification should cover desktop and mobile layouts, the full booking/confirmation flow, homepage and gallery video playback, both admin email/password logins and independent logout, a days-off change, a photo upload, and cancellation. Automated API tests do not replace those browser checks.
