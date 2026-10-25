@@ -89,3 +89,29 @@ test('cancellation does not refund and manual refunds synchronize without cancel
   row = await db.prepare('SELECT * FROM bookings').get();
   assert.equal(row.status, 'cancelled'); assert.equal(row.amount_refunded, 4000);
 });
+
+test('a lost Stripe response can be retried without creating a second session', async (t) => {
+  const { db, payments, provider, input, now } = await fixture(t);
+  const original = provider.stripe.checkout.sessions.create;
+  let lost = false;
+  provider.stripe.checkout.sessions.create = async (...args) => {
+    const session = await original(...args);
+    if (!lost) { lost = true; throw new Error('Connection interrupted after Stripe accepted the request'); }
+    return session;
+  };
+  await assert.rejects(payments.start(input, now), { status: 503 });
+  assert.equal((await db.prepare('SELECT status FROM bookings').get()).status, 'pending');
+  await payments.start(input, now);
+  assert.equal(provider.sessions.size, 1);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM bookings').get()).n, 1);
+});
+
+test('payment racing an unpaid cancellation is recorded before the slot is released', async (t) => {
+  const { db, payments, provider, input, now } = await fixture(t);
+  const checkout = await payments.start(input, now);
+  provider.stripe.checkout.sessions.expire = async () => { provider.payBooking(checkout.id); throw new Error('Already paid'); };
+  const cancelled = await payments.cancel(checkout.id);
+  assert.equal(cancelled.status, 'cancelled');
+  assert.equal(cancelled.payment_status, 'paid');
+  assert((await availableSlots(db, input.date, 'haircut', now)).some((slot) => slot.time === input.time));
+});
