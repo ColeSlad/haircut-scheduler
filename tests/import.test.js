@@ -1,0 +1,34 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { openStore } from '../server/legacy-store.js';
+import { testDatabase } from './helpers.js';
+import { readLegacy, importLegacy } from '../scripts/import-sqlite.js';
+import { publicData } from '../server/store.js';
+
+test('SQLite import preserves edits, password hashes and media, and never overwrites a completed import', async (t) => {
+  const db = await testDatabase(t, false);
+  const directory = mkdtempSync(join(tmpdir(), 'l2cuts-import-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const file = join(directory, 'source.sqlite');
+  const legacy = openStore(file);
+  legacy.prepare("UPDATE services SET price = 3000 WHERE id = 'haircut'").run();
+  legacy.prepare('INSERT INTO admin VALUES (1, ?, ?)').run('owner@example.com', 'preserved-scrypt-hash');
+  legacy.prepare('INSERT INTO home_videos VALUES (?, ?, ?, ?, ?)').run('first', 'My video', '/uploads/abc-123.mp4', '/uploads/abc-456.jpg', 0);
+  const originalReviews = legacy.prepare('SELECT value FROM review_content').get().value;
+  legacy.close();
+  const source = readLegacy(file);
+  const origin = 'https://isolated.public.blob.vercel-storage.com';
+  const result = await importLegacy(db, source, { blobOrigin: origin, upload: async (path, kind) => `${origin}/${kind === 'video' ? 'videos' : 'posters'}/${path.split('/').at(-1)}` });
+  assert.equal(result.media, 2);
+  assert.equal((await publicData(db)).services[0].price, 3000);
+  assert.equal((await db.prepare('SELECT password_hash FROM admin').get()).password_hash, 'preserved-scrypt-hash');
+  assert.equal((await db.prepare('SELECT value FROM review_content').get()).value, originalReviews);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM sessions').get()).n, 0);
+  assert((await publicData(db)).homeVideos[0].video.startsWith(origin));
+  await db.exec("UPDATE services SET price = 3500 WHERE id = 'haircut'");
+  assert.equal((await importLegacy(db, source)).alreadyImported, true);
+  assert.equal((await publicData(db)).services[0].price, 3500);
+});
