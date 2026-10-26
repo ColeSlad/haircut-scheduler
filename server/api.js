@@ -195,7 +195,14 @@ export function createApi(db, { origin, secure, provider, secret, storage = crea
         return json({ ok: true });
       }
       if (/^\/api\/admin\/bookings\/[^/]+$/.test(path) && method === 'PATCH') {
-        const { status } = await readJson(req);
+        const { status, paymentStatus } = await readJson(req);
+        if (paymentStatus !== undefined) {
+          if (paymentStatus !== 'paid' || status !== undefined) throw new HttpError(400, 'Choose a valid payment update.');
+          const updated = await db.prepare(`UPDATE bookings SET payment_status = 'paid'
+            WHERE id = ? AND payment_method = 'in_person' AND payment_status IN ('unpaid', 'paid') AND status IN ('confirmed', 'completed')`).run(path.split('/').at(-1));
+          if (!updated.changes) throw new HttpError(400, 'Only a confirmed or completed in-person appointment can be marked paid.');
+          return json({ ok: true });
+        }
         if (!['cancelled', 'completed', 'no-show'].includes(status)) throw new HttpError(400, 'Choose a valid appointment status.');
         const booking = (await db.prepare('SELECT * FROM bookings WHERE id = ?').get(path.split('/').at(-1)));
         if (!booking) throw new HttpError(404, 'Appointment not found.');

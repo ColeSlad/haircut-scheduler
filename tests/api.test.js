@@ -76,6 +76,31 @@ test('private admin endpoints and mutations require authentication', async (t) =
   assert.equal((await request('/api/admin/videos', { method: 'PUT', body: { videos: [] } })).status, 401);
   assert.equal((await request('/api/admin/reviews', { method: 'PUT', body: { rating: 5, items: [] } })).status, 401);
 });
+
+test('only admins can record in-person payments, without changing online payment records', async (t) => {
+  const { db, request, login } = await fixture(t);
+  const input = await futureSlot(db);
+  const created = await request('/api/bookings', { method: 'POST', body: { ...input, paymentMethod: 'in_person' } });
+  assert.equal(created.status, 201);
+  const path = `/api/admin/bookings/${created.body.id}`;
+  const body = { paymentStatus: 'paid' };
+  assert.equal((await request(path, { method: 'PATCH', body })).status, 401);
+  const cookie = await login();
+  const headers = { cookie };
+  assert.equal((await request(path, { method: 'PATCH', headers, body: { paymentStatus: 'refunded' } })).status, 400);
+  assert.equal((await request(path, { method: 'PATCH', headers, body })).status, 200);
+  assert.equal((await request(path, { method: 'PATCH', headers, body })).status, 200);
+  assert.equal((await db.prepare('SELECT payment_status FROM bookings WHERE id = ?').get(created.body.id)).payment_status, 'paid');
+  const token = created.body.bookingUrl.split('#')[1];
+  const client = await request('/api/booking', { headers: { authorization: `Bearer ${token}` } });
+  assert.equal(client.body.paymentStatus, 'paid');
+  await request(path, { method: 'PATCH', headers, body: { status: 'cancelled' } });
+  assert.equal((await request(path, { method: 'PATCH', headers, body })).status, 400);
+  const online = await request('/api/bookings', { method: 'POST', body: { ...input, paymentMethod: 'online' } });
+  assert.equal(online.status, 201);
+  assert.equal((await request(`/api/admin/bookings/${online.body.id}`, { method: 'PATCH', headers, body })).status, 400);
+  assert.equal((await db.prepare('SELECT payment_status FROM bookings WHERE id = ?').get(online.body.id)).payment_status, 'unpaid');
+});
 test('login creates an HttpOnly session and logout revokes it', async (t) => {
   const { request } = await fixture(t);
   const login = await request('/api/admin/login', { method: 'POST', body: { email: 'admin@example.com', password: ' secure-test-password ' } });
