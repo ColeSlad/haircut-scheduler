@@ -10,6 +10,8 @@ Anyone can post a name, 1–5 star rating, and review on **/reviews**, without a
 
 **Admin → Notifications** controls private barber SMS alerts. When Twilio is connected and alerts are enabled, confirmed bookings and cancellations text the barber the client name/phone, haircut, local date/time, duration, price, and payment status. The recipient is separate from the public contact phone. The panel includes a test text and delivery history. SMS is disabled by default and needs provider setup described in [DEPLOYMENT.md](DEPLOYMENT.md#6-barber-text-notifications); no provider keys go in the browser or Git.
 
+An Accepted SMS is still awaiting delivery confirmation. **Refresh status** checks up to three pending messages directly with Twilio and recovers delivery/failure results if a signed callback was missed, without sending another text. Error 30034 means the US local sender needs approved A2P 10DLC registration and linkage to the registered Messaging Service. Buying a number and upgrading the account alone do not complete sender registration.
+
 ## Local setup
 
 Use **Node.js 24**, npm, and PostgreSQL 14 or newer. Production uses Neon Postgres and public Vercel Blob. SQLite is retained only for importing the previous installation.
