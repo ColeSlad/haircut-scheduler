@@ -1,12 +1,35 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '../server/legacy-store.js';
 import { testDatabase } from './helpers.js';
-import { readLegacy, importLegacy } from '../scripts/import-sqlite.js';
+import { readLegacy, importLegacy, uploadMedia } from '../scripts/import-sqlite.js';
 import { publicData } from '../server/store.js';
+import { BlobNotFoundError } from '@vercel/blob';
+
+test('media import uploads missing blobs and reuses matching immutable files on retry', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'l2cuts-media-import-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  mkdirSync(join(directory, 'uploads'));
+  const bytes = Buffer.from([255, 216, 255, 0, 0, 0]);
+  writeFileSync(join(directory, 'uploads', 'abc-123.jpg'), bytes);
+  const origin = 'https://fixture.public.blob.vercel-storage.com';
+  let writes = 0;
+  const write = async (pathname, contents, options) => {
+    writes++;
+    assert.deepEqual(contents, bytes);
+    assert.equal(options.allowOverwrite, false);
+    return { url: `${origin}/${pathname}` };
+  };
+  const first = await uploadMedia('/uploads/abc-123.jpg', 'photo', directory, { origin, write, inspect: async () => { throw new BlobNotFoundError(); } });
+  assert.match(first, /\/photos\/[a-f0-9]{64}\.jpg$/);
+  const second = await uploadMedia('/uploads/abc-123.jpg', 'photo', directory, { origin, write, inspect: async () => ({ size: bytes.length, contentType: 'image/jpeg' }) });
+  assert.equal(first, second); assert.equal(writes, 1);
+  await assert.rejects(uploadMedia('/uploads/abc-123.jpg', 'photo', directory, { origin, write, inspect: async () => { throw new Error('Storage unavailable'); } }), /unavailable/);
+  assert.equal(writes, 1);
+});
 
 test('SQLite import preserves edits, password hashes and media, and never overwrites a completed import', async (t) => {
   const db = await testDatabase(t, false);

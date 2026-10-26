@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { put, head } from '@vercel/blob';
+import { put, head, BlobNotFoundError } from '@vercel/blob';
 import { openPostgres, migrate } from '../server/postgres.js';
 import { imageType, trustedBlobUrl } from '../server/storage.js';
 
@@ -18,20 +18,20 @@ export function readLegacy(file) {
   } finally { source.close(); }
 }
 
-async function uploadMedia(path, kind, dataDir) {
+export async function uploadMedia(path, kind, dataDir, { inspect = head, write = put, origin = process.env.BLOB_PUBLIC_ORIGIN } = {}) {
   if (!/^\/uploads\/[a-f0-9-]+\.(mp4|jpg|png|webp)$/.test(path)) throw new Error('Unexpected legacy media path.');
   const bytes = await readFile(resolve(dataDir, path.slice(1)));
   const contentType = kind === 'video' ? 'video/mp4' : imageType(bytes);
   if (kind === 'video' && bytes.subarray(4, 8).toString() !== 'ftyp') throw new Error('Legacy video is not an MP4.');
   const folder = { video: 'videos', photo: 'photos', poster: 'posters' }[kind];
   const pathname = `${folder}/${createHash('sha256').update(bytes).digest('hex')}${extname(path)}`;
-  const url = `${process.env.BLOB_PUBLIC_ORIGIN}/${pathname}`;
+  const url = `${origin}/${pathname}`;
   try {
-    const existing = await head(url);
+    const existing = await inspect(url);
     if (existing.size !== bytes.length || existing.contentType !== contentType) throw new Error('Existing media does not match the import.');
     return url;
-  } catch (error) { if (error.name !== 'BlobNotFoundError') throw error; }
-  return (await put(pathname, bytes, { access: 'public', contentType, addRandomSuffix: false, allowOverwrite: false })).url;
+  } catch (error) { if (!(error instanceof BlobNotFoundError)) throw error; }
+  return (await write(pathname, bytes, { access: 'public', contentType, addRandomSuffix: false, allowOverwrite: false })).url;
 }
 
 export async function importLegacy(db, source, { dataDir, upload = uploadMedia, blobOrigin = process.env.BLOB_PUBLIC_ORIGIN } = {}) {
