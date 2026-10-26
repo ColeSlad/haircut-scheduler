@@ -1,95 +1,71 @@
-# Haircut scheduler
+# L2 Cuts
 
-A complete starting point for a single barber: a studio landing page, online appointment scheduling, a photo and TikTok video gallery, and an email/password-protected admin workspace for up to two admins. Clients book without an account.
+A single-barber booking site with guest checkout and up to two email/password admins. The simple homepage, reviews, supplied logo, and videos are preserved.
 
-The header, browser icon, and loading screen use the supplied **L2 Cuts** logo in `public/assets/l2cuts-logo.png`. Business details, haircut price and duration, hours, and location are editable in admin. Replace the defaults before taking real bookings.
+Clients choose a time and enter first name, last name, and phone. They pay the full haircut price through Stripe-hosted Checkout, which collects an email for the payment receipt. An appointment is confirmed only after the server verifies payment. Clients save their private appointment link to view, download a calendar event, or cancel. Booking emails, SMS, external calendar sync, and self-service rescheduling are not included.
 
-## Run locally
+Admin manages appointments, the haircut price/duration, weekly hours, days off, business details, reviews, photos, and TikTok links. Payment and refund status appear beside appointments. Cancelling releases the time; refunds are handled separately in the Stripe Dashboard.
 
-Requires **Node.js 24 or newer**. There are no external dependencies to install.
+## Local setup
+
+Use **Node.js 24**, npm, and PostgreSQL 14 or newer. Production uses Neon Postgres and public Vercel Blob. SQLite is retained only for importing the previous installation.
 
 ```sh
+npm ci
 cp .env.example .env
+createdb haircut
+createdb haircut_test
+```
+
+Set `DATABASE_URL` and `TEST_DATABASE_URL` to those separate local databases. Generate independent `APP_SECRET` and `CRON_SECRET` values with `openssl rand -hex 32`. Add Stripe **test** keys and a test Blob store to enable checkout and uploads; other local pages work without them.
+
+For a new, empty installation:
+
+```sh
+npm run db:migrate
+npm run db:seed
 npm run admin:create
 npm run dev
 ```
 
-Open **http://localhost:3000**. If file watching is unavailable on your system, use `npm start` instead. Use `localhost`, rather than `127.0.0.1`, to match the default `APP_ORIGIN`.
+Open **http://localhost:3000**. Vite serves the frontend and proxies APIs to port 3001. `PORT` changes the frontend port; its API uses the next port. Stop an existing server before using its port. For a built local app, run `npm run build` and `npm start`.
 
-Admin sign-in uses an email address and password. Run `npm run admin:create` once for each admin (up to two). Password entry is hidden and passwords must be 12–256 characters. Both accounts have full access to the same single-barber calendar and management settings. Clients book without accounts.
+**Existing installations:** follow [DEPLOYMENT.md](DEPLOYMENT.md) to import your SQLite data and media instead of running `db:seed`. Starting or deploying the app never automatically migrates or seeds data.
 
-A new email adds an admin; entering an existing email resets only that account’s password and signs out that admin’s sessions. The other admin keeps access. Existing email/password credentials are preserved when upgrading. There is no public admin registration or default password, and no SMS provider or external credentials are needed for admin sign-in.
+`npm run admin:create` securely prompts for an email and a hidden password of 12–256 characters. A new email adds an admin, up to two; an existing email resets only that account and revokes its sessions. Both admins have the same access. There is no default password, public registration, or client account requirement.
 
-## What’s included
+## Booking and payment rules
 
-- **Landing page** (`/`): a short introduction, haircut price/duration, booking button, gallery link, editable reviews beside the introduction, and local haircut videos with playback controls.
-- **Booking** (`/schedule`): choose an available date/time, then enter your first name, last name, and phone number. No email address or notes are collected. Prices are in USD, with payment at the appointment.
-- **Confirmation** (`/booking#private-token`): appointment details, a private cancellation link, and an `.ics` calendar download. The token stays in the URL fragment rather than server access logs.
-- **Gallery** (`/gallery`): playable TikTok videos from [@l2cuts](https://www.tiktok.com/@l2cuts) and the same local haircut clips shown on the homepage, with responsive layouts.
-- **Admin** (`/admin`): appointment search and status updates, weekly hours, full days off, haircut price/duration edits, reviews, photo uploads, TikTok video links/titles, and studio details.
+Haircut is the only service. New installations default to 45 minutes and $40; migration preserves your current price and duration. Admin can set a price from $0.50 to $1,000. Prices are USD, charged once in full, with cards and eligible wallets through Stripe. No tips, subscriptions, or automatic tax calculation are configured.
 
-Appointments, admin accounts, sessions, settings, reviews, and homepage video metadata persist in SQLite. Gallery uploads and homepage video files persist on disk. Booking validation and conflict checks run in an immediate database transaction so two clients cannot reserve overlapping time for the same barber.
+The studio time zone drives availability, including daylight-saving changes. Starts are offered every 15 minutes, must fit within working hours, and respect days off, minimum notice, and the booking horizon. Service edits affect new reservations; existing ones retain their booked price and duration. Hours changes do not silently cancel appointments. Upcoming paid appointments or pending checkouts prevent a time-zone change.
 
-Reviews start with a 4.99/5 display score and three labeled five-star placeholders. Edit names, text, stars, placeholder labels, and the overall score in **Admin → Reviews**. The overall score is set separately from individual ratings. Removing every review hides the section. Placeholder content is seeded once and does not overwrite later edits.
+Checkout reserves a slot for 31 minutes. Online appointments require at least 32 minutes of notice so checkout expires before the appointment starts, even if an imported configuration used less notice. Pending and confirmed bookings cannot overlap, enforced by both a database transaction and a Postgres exclusion constraint. A slot is released only when Stripe verifies expiry/cancellation, never just because a local timer elapsed. Failed checks keep the hold and are retried by the scheduled reconciliation job. Webhook processing and checkout retries are idempotent.
 
-## Defaults and booking rules
+Clients can cancel before the appointment starts. Cancellation does **not** automatically refund a payment. Admin issues full or partial refunds in Stripe; signed webhooks synchronize the refunded amount without changing appointment status. Stripe payment receipts require the receipt setting described in the deployment guide. No appointment confirmation email is promised.
 
-Haircut is the only booking option, initially 45 minutes and $40. The admin can change its price and duration. Existing installations keep the previous haircut price and duration; other service options are retired without changing past or upcoming appointments. Default hours are Tuesday–Friday 9 AM–6 PM and Saturday 9 AM–4 PM, in `America/New_York`.
+The private link uses `/booking#token`. Requests send its credential in an authorization header, keeping it out of access-log paths. Anyone with that link can manage the appointment; keep it private. Stripe receives only an opaque booking ID in metadata and return URLs. Returning from Checkout requires the browser's short-lived secure cookie, so use the same browser to complete checkout and save the resulting link.
 
-Starts are offered in 15-minute increments. A service must fit completely within the day’s hours. By default, clients must book at least one hour ahead and can book up to 60 days ahead. The studio time zone drives availability, independently of the server or visitor’s time zone, including daylight-saving changes.
+## Storage and security
 
-Service edits affect new bookings. Existing bookings retain their original name, price, duration, and time. Changing hours or adding days off does not silently cancel appointments. Upcoming confirmed appointments must be cancelled before changing the studio time zone.
+Postgres stores appointments, settings, hashed admin credentials and sessions, rate limits, payment references, and media metadata. Vercel Blob stores public videos, posters, and validated photos. Admin uploads go directly to Blob to avoid function request-size limits. The server validates store ownership, file size, and JPEG/PNG/WebP signatures before a photo can be published.
 
-Clients can cancel before their appointment starts, using their private link. The admin can cancel appointments or mark finished appointments completed/no-show. A client who wants another time can cancel and rebook.
+Passwords use salted scrypt. Admin sessions last 12 hours and use HttpOnly, SameSite cookies, with Secure enabled on HTTPS. Server-side origin checks, validation, durable rate limits, and security headers protect mutations. Live Stripe keys are rejected outside Vercel production. Preview deployments must use separate test resources.
 
-## Data and deployment
+Never commit `.env`, database exports, runtime SQLite files, uploads, credentials, or private booking links. `data/`, `.env*` (except the example), `.backups/`, `.vercel/`, and build output are ignored; deployment also excludes local data and secrets.
 
-`data/` is created automatically and ignored by Git. It contains `scheduler.sqlite` (and its SQLite WAL/SHM files while running) and `uploads/`. Treat this directory as private application data. `DATA_DIR` can point to another persistent location.
-
-Run this app as a Node.js process with a **persistent local disk**, behind an HTTPS reverse proxy. This implementation does not target static hosting or ephemeral serverless filesystems. Set:
-
-```dotenv
-HOST=0.0.0.0
-PORT=3000
-NODE_ENV=production
-APP_ORIGIN=https://your-domain.example
-DATA_DIR=/your/persistent/data
-```
-
-`APP_ORIGIN` must match the exact browser origin, with no trailing slash. It is checked for mutations and enables Secure cookies when HTTPS is used. The production server refuses an HTTP public origin. Proxy only your chosen public hostname to the application.
-
-Back up the database and uploaded images together. For a simple consistent backup, stop the app and copy the entire data directory. Never commit runtime data or `.env`.
-
-Passwords use salted scrypt hashes. Admin sessions use random tokens stored as hashes, with HttpOnly/SameSite cookies and a 12-hour expiry. Sessions are bound to the individual admin account and its current password. The server enforces request limits, same-origin writes, input validation, and security headers. Uploaded images are limited to JPEG/PNG/WebP and 5 MB. SVG and executable uploads are rejected.
-
-## Scope
-
-Client confirmation emails/texts, payment processing, external calendar synchronization, and self-service rescheduling are not configured. The confirmation screen explicitly tells clients to save their private management link; no confirmation email is promised. Calendar download works without a calendar integration. Appointment status changes do not send messages.
-
-The TikTok gallery starts with three public videos from @l2cuts. Add or remove full video URLs in the admin’s TikTok videos tab. Videos use TikTok’s embedded player and require TikTok to be available; each card also links to the original video. New TikTok posts are added manually rather than automatically synced.
-
-The homepage and gallery share local MP4 clips and JPEG posters in ignored `data/uploads/`, with titles and ordering in the `home_videos` database table. They load on demand and do not autoplay. Include these runtime files and the database when moving the app to another server; personal media is not committed to Git.
-
-The app bundles [DM Sans](https://fonts.google.com/specimen/DM+Sans) for its typography. The font is served locally, with its [SIL Open Font License](public/assets/dm-sans-OFL.txt) included.
-
-Saved photos and labeled samples remain available in admin. The public gallery displays videos in place of the former Photos section.
-
-## Project layout
-
-```text
-public/          Browser-native ES modules, styles, and local assets
-server/          HTTP server, API, authentication, SQLite, scheduling
-scripts/         Interactive admin setup and syntax checks
-tests/           Scheduling and in-process HTTP/API regression tests
-```
-
-## Validate
+## Validation
 
 ```sh
 npm run check
 npm test
+npm run build
 ```
 
-The automated suite covers availability and service durations, overlap prevention (including competing requests), cancellation, studio time zones/DST, authentication and session revocation, CSRF protection, admin edits, image upload restrictions, and private-data access. It runs against isolated temporary or in-memory databases without opening a network port.
+Tests require `TEST_DATABASE_URL` pointing to an isolated Postgres database whose role can create schemas. They create and remove unique test schemas and use a fake Stripe transport with real webhook-signature verification. They never call Stripe or use `DATABASE_URL`. GitHub Actions runs checks, tests, the production build, and a dependency audit against disposable Postgres.
 
-Browser verification should cover desktop and mobile layouts, the full booking/confirmation flow, homepage and gallery video playback, both admin email/password logins and independent logout, a days-off change, a photo upload, and cancellation. Automated API tests do not replace those browser checks.
+Browser verification covers desktop/mobile booking, back navigation, payment states, cancellation, admin layout, gallery filters, video playback, and uploads. Real Stripe test payments and Blob callbacks must also be verified on the configured Vercel test deployment before launch.
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for Vercel setup, migration, test/live keys, receipts, monitoring, and backup/restore procedures.
+
+Typography uses locally served [DM Sans](https://fonts.google.com/specimen/DM+Sans), with its [SIL Open Font License](public/assets/dm-sans-OFL.txt). TikTok embeds link to [@l2cuts](https://www.tiktok.com/@l2cuts); new posts are added manually. Reviews are admin-edited, and any placeholders should remain labeled until replaced.
