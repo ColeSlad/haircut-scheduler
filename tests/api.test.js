@@ -397,6 +397,9 @@ test('static routing does not expose server files, databases, or environment fil
   for (const path of ['/.env', '/data/scheduler.sqlite', '/server/index.js', '/assets/../server/store.js']) assert.equal((await request(path)).status, 404);
   const home = await request('/');
   assert.equal(home.status, 200);
+  const reviews = await request('/reviews');
+  assert.equal(reviews.status, 200);
+  assert.match(reviews.headers['content-type'], /text\/html/);
   assert.match(home.headers['content-security-policy'], /frame-ancestors 'none'/);
   assert.match(home.headers['content-security-policy'], /frame-src https:\/\/www\.tiktok\.com;/);
   assert.match(home.headers['content-security-policy'], /script-src 'self';/);

@@ -319,8 +319,7 @@ code { font-family: monospace; background: var(--soft); padding: 2px 4px; font-s
 .notification-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-block: 16px; border-bottom: 1px solid var(--line); }
 .notification-row p { margin-top: 6px; font-size: 14px; }
 .notification-row small { display: block; margin-top: 6px; color: var(--muted); }
-.review-rating-input { max-width: 240px; }
-.review-rating-input + .fine-print { margin-top: 12px; }
+.review-pagination { display: flex; gap: 12px; margin-top: 24px; }
 
 @media (max-width: 900px) {
   .booking-layout { grid-template-columns: minmax(0, 1fr); gap: 28px; }

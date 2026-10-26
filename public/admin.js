@@ -1,6 +1,7 @@
 import { upload } from '@vercel/blob/client';
 import { $, $$, esc, money, timeLabel, dateLabel, todayIn, dayNames, categories, api, arrow, smallIcon, toast, loadingButton, fieldError, imageEvents } from './shared.js';
 import { galleryImage } from './pages.js';
+import { reviewRating } from './reviews.js';
 
 export async function mountAdmin(publicData, { refreshData }) {
   const root = $('#main');
@@ -11,6 +12,8 @@ export async function mountAdmin(publicData, { refreshData }) {
   let filter = 'upcoming';
   let search = '';
   let editing = false;
+  let reviewBefore = null;
+  let reviewPrevious = [];
   function login() {
     if (location.pathname !== '/admin' || !root.isConnected) return;
     root.innerHTML = `<section class="login-section section-shell"><a href="/" class="back-link">← Home</a><div class="login-card"><h1>Admin sign in</h1>${session.configured ? `<form id="login-form"><label>Email address<input name="email" type="email" autocomplete="username" required maxlength="254" placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="current-password" required maxlength="256" placeholder="Your password"></label><p class="form-error" data-error role="alert" tabindex="-1" hidden></p><button class="button primary" type="submit">Sign in</button></form>` : '<div class="setup-note"><p>Admin access is not configured.</p><button class="button outline" id="check-setup">Check again</button></div>'}</div></section>`;
@@ -25,11 +28,14 @@ export async function mountAdmin(publicData, { refreshData }) {
       catch (error) { fieldError(form, error); } finally { restore(); }
     });
   }
-  async function load() { data = await api('/api/admin/data'); }
-  async function save(path, body, button) {
+  async function load() {
+    data = await api('/api/admin/data');
+    if (reviewBefore) data.reviews = await api(`/api/admin/reviews?before=${reviewBefore}`);
+  }
+  async function save(path, body, button, method = 'PUT') {
     const restore = loadingButton(button, 'Saving…');
     try {
-      await api(path, { method: 'PUT', body });
+      await api(path, { method, body });
       editing = false;
       await load();
       await refreshData();
@@ -73,10 +79,10 @@ export async function mountAdmin(publicData, { refreshData }) {
     return `<div class="admin-section-heading"><div><h2>Haircut</h2></div></div><form id="services-form"><div class="admin-panel service-editor"><div class="form-grid"><label>Duration (minutes)<select name="duration">${Array.from({ length: 12 }, (_, i) => (i + 1) * 15).map((n) => `<option ${service.duration === n ? 'selected' : ''} value="${n}">${n} minutes</option>`).join('')}</select></label><label>Price (USD)<input name="price" type="number" min="0.50" max="1000" step="0.01" required value="${(service.price / 100).toFixed(2)}"></label></div></div><p class="fine-print">Prices are in USD. Changes apply to new bookings; existing appointments keep their booked price and duration.</p><p class="form-error" data-error role="alert" tabindex="-1" hidden></p><button class="button primary" type="submit">Save haircut ${arrow}</button></form>`;
   }
   function reviewsForm() {
-    return `<div class="admin-section-heading"><h2>Reviews</h2></div><form id="reviews-form"><div class="admin-panel"><label class="review-rating-input">Overall rating (out of 5)<input name="rating" type="number" min="0" max="5" step="0.01" inputmode="decimal" required value="${data.reviews.rating}"></label><p class="fine-print">Set separately from individual review ratings.</p></div><div id="review-editor-list">${data.reviews.items.map(reviewRow).join('')}</div><button class="button outline small" type="button" id="add-review">+ Add a review</button><p class="form-error" data-error role="alert" tabindex="-1" hidden></p><button class="button primary" type="submit">Save reviews ${arrow}</button></form>`;
+    return `<div class="admin-section-heading"><div><h2>Reviews</h2><p>${reviewRating(data.reviews)}</p></div><button class="text-link" id="refresh-reviews">Refresh reviews</button></div><p class="fine-print">Choose up to three reviews for the homepage (${data.reviews.homeCount}/3 selected). Ratings exclude hidden and placeholder reviews.</p><form id="reviews-form"><div id="review-editor-list">${data.reviews.items.length ? data.reviews.items.map(reviewRow).join('') : '<p class="empty-state">No reviews on this page.</p>'}</div><button class="button outline small" type="button" id="add-review">+ Add a review</button><p class="form-error" data-error role="alert" tabindex="-1" hidden></p><button class="button primary" type="submit">Save reviews ${arrow}</button></form><nav class="review-pagination" aria-label="Review pages"><button class="button outline small" id="previous-reviews" ${!reviewPrevious.length ? 'disabled' : ''}>Previous</button><button class="button outline small" id="next-reviews" ${!data.reviews.nextCursor ? 'disabled' : ''}>Next</button></nav>`;
   }
   function reviewRow(review = {}) {
-    return `<fieldset class="admin-panel review-editor" data-review-id="${esc(review.id || '')}"><legend class="sr-only">Review</legend><div class="form-grid"><label>Reviewer name<input name="reviewer" required maxlength="80" value="${esc(review.name || '')}" placeholder="Reviewer name"></label><label>Stars<select name="stars">${[1, 2, 3, 4, 5].map((stars) => `<option value="${stars}" ${stars === (review.stars || 5) ? 'selected' : ''}>${stars} ${stars === 1 ? 'star' : 'stars'}</option>`).join('')}</select></label><label class="full">Review text<textarea name="text" rows="2" required maxlength="600" placeholder="Review text">${esc(review.text || '')}</textarea></label><label class="toggle-label full"><input type="checkbox" name="sample" ${review.sample !== false ? 'checked' : ''}>Placeholder review</label><button class="subtle-button danger remove-row" type="button">Remove review</button></div></fieldset>`;
+    return `<fieldset class="admin-panel review-editor" data-review-id="${esc(review.id || '')}" data-review-version="${review.version || ''}"><legend class="sr-only">Review by ${esc(review.name || 'new reviewer')}</legend><div class="form-grid"><label>Reviewer name<input name="reviewer" required maxlength="80" value="${esc(review.name || '')}" placeholder="Reviewer name"></label><label>Stars<select name="stars">${[1, 2, 3, 4, 5].map((stars) => `<option value="${stars}" ${stars === (review.stars || 5) ? 'selected' : ''}>${stars} ${stars === 1 ? 'star' : 'stars'}</option>`).join('')}</select></label><label class="full">Review text<textarea name="text" rows="2" required maxlength="600" placeholder="Review text">${esc(review.text || '')}</textarea></label><label class="toggle-label full"><input type="checkbox" name="showOnHome" ${review.showOnHome ? 'checked' : ''} ${review.hidden ? 'disabled' : ''}>Show on homepage</label><label class="toggle-label full"><input type="checkbox" name="hidden" ${review.hidden ? 'checked' : ''}>Hide from public reviews</label><label class="toggle-label full"><input type="checkbox" name="sample" ${review.sample !== false ? 'checked' : ''}>Placeholder review</label>${!review.id ? '<button class="subtle-button danger remove-row" type="button">Remove draft</button>' : ''}</div></fieldset>`;
   }
   function gallery() {
     return `<div class="admin-section-heading"><div><h2>Photos</h2></div></div><form id="gallery-form"><div id="gallery-editor-list">${data.gallery.map((item) => galleryRow(item)).join('')}</div><button type="button" class="button outline small" id="add-gallery">+ Add a photo</button><p class="fine-print">Upload JPEG, PNG, or WebP images under 5 MB. Only share photos you have permission to publish.</p><p class="form-error" data-error role="alert" tabindex="-1" hidden></p><button class="button primary" type="submit">Save gallery ${arrow}</button></form>`;
@@ -116,7 +122,16 @@ export async function mountAdmin(publicData, { refreshData }) {
     bindAppointmentActions();
     $('#add-day-off')?.addEventListener('click', () => { $('#days-off-list').insertAdjacentHTML('beforeend', dayOffRow()); editing = true; bindRemove(); });
     $('#add-gallery')?.addEventListener('click', () => { if ($$('.gallery-editor').length >= 100) return toast('You can add up to 100 photos.'); $('#gallery-editor-list').insertAdjacentHTML('beforeend', galleryRow()); editing = true; bindRemove(); bindUploads(); });
-    $('#add-review')?.addEventListener('click', () => { if ($$('.review-editor').length >= 10) return toast('You can add up to 10 reviews.'); $('#review-editor-list').insertAdjacentHTML('beforeend', reviewRow()); editing = true; bindRemove(); });
+    $('#add-review')?.addEventListener('click', () => { if ($$('.review-editor').length >= 30) return toast('Save these reviews before adding more.'); $('#review-editor-list .empty-state')?.remove(); $('#review-editor-list').insertAdjacentHTML('beforeend', reviewRow()); editing = true; bindRemove(); });
+    $('#reviews-form')?.addEventListener('change', (event) => {
+      if (event.target.name !== 'hidden') return;
+      const home = $('[name="showOnHome"]', event.target.closest('.review-editor'));
+      home.disabled = event.target.checked;
+      if (home.disabled) home.checked = false;
+    });
+    $('#refresh-reviews')?.addEventListener('click', () => reviewPage(null, 'refresh'));
+    $('#next-reviews')?.addEventListener('click', () => reviewPage(data.reviews.nextCursor, 'next'));
+    $('#previous-reviews')?.addEventListener('click', () => reviewPage(reviewPrevious.at(-1), 'previous'));
     $('#add-video')?.addEventListener('click', () => { if ($$('.video-editor').length >= 30) return toast('You can add up to 30 TikTok videos.'); $('#video-editor-list').insertAdjacentHTML('beforeend', videoRow()); editing = true; bindRemove(); });
     bindRemove(); bindUploads();
     $('#hours-form')?.addEventListener('submit', (event) => {
@@ -132,8 +147,8 @@ export async function mountAdmin(publicData, { refreshData }) {
     });
     $('#reviews-form')?.addEventListener('submit', (event) => {
       event.preventDefault(); const form = event.currentTarget;
-      const items = $$('.review-editor', form).map((row) => ({ id: row.dataset.reviewId || undefined, name: $('[name="reviewer"]', row).value, text: $('[name="text"]', row).value, stars: Number($('[name="stars"]', row).value), sample: $('[name="sample"]', row).checked }));
-      save('/api/admin/reviews', { rating: Number($('[name="rating"]', form).value), items }, $('button[type="submit"]', form));
+      const items = $$('.review-editor', form).map((row) => ({ id: row.dataset.reviewId || undefined, version: row.dataset.reviewId ? Number(row.dataset.reviewVersion) : undefined, name: $('[name="reviewer"]', row).value, text: $('[name="text"]', row).value, stars: Number($('[name="stars"]', row).value), sample: $('[name="sample"]', row).checked, showOnHome: $('[name="showOnHome"]', row).checked, hidden: $('[name="hidden"]', row).checked }));
+      save('/api/admin/reviews', { items }, $('button[type="submit"]', form), 'PATCH');
     });
     $('#services-form')?.addEventListener('submit', (event) => {
       event.preventDefault(); const form = event.currentTarget;
@@ -170,6 +185,26 @@ export async function mountAdmin(publicData, { refreshData }) {
       finally { restore(); }
     }));
     $('#settings-form')?.addEventListener('submit', (event) => { event.preventDefault(); const form = event.currentTarget; const settings = Object.fromEntries(new FormData(form)); settings.leadMinutes = Number(settings.leadMinutes); settings.bookingDays = Number(settings.bookingDays); save('/api/admin/settings', settings, $('button[type="submit"]', form)); });
+  }
+  function reviewPage(before, direction) {
+    const change = async () => {
+      const buttons = $$('.review-pagination button, #refresh-reviews');
+      buttons.forEach(button => { button.disabled = true; });
+      try {
+        const reviews = await api(`/api/admin/reviews${before ? `?before=${before}` : ''}`);
+        if (direction === 'next') reviewPrevious.push(reviewBefore);
+        if (direction === 'previous') reviewPrevious.pop();
+        if (direction === 'refresh') reviewPrevious = [];
+        reviewBefore = before;
+        data.reviews = reviews;
+        editing = false;
+        render();
+        $('#admin-content')?.scrollIntoView({ block: 'start' });
+      } catch (error) { toast(error.message); }
+      finally { buttons.forEach(button => { button.disabled = false; }); }
+    };
+    if (editing) showDialog('Leave without saving?', 'Your unsaved changes will be discarded.', 'Discard changes', change);
+    else change();
   }
   function bindRemove() { $$('.remove-row').forEach((button) => { button.onclick = () => { button.closest('fieldset, .day-off-row').remove(); editing = true; }; }); }
   function bindUploads() {
