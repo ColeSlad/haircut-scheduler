@@ -2,19 +2,19 @@
 
 ## Launch checkpoint — October 25, 2026
 
-The code is pushed to `main`, and the [l2cuts Vercel project](https://vercel.com/cole-sladowskys-projects/l2cuts) is created and linked to the repository. Its first deployment is blocked by Hobby's daily-only cron limit; the configured reconciliation job runs every minute and requires Pro. No production database/media migration or domain cutover has been performed.
+The code is pushed to `main`, and the [l2cuts Vercel project](https://vercel.com/cole-sladowskys-projects/l2cuts) is created and linked to the repository. The Hobby-compatible build now deploys successfully at `https://l2cuts.vercel.app`: it uses a daily cleanup job with webhook-driven and on-demand payment reconciliation. The previous minute-cron deployment blocker is resolved. Runtime credentials are still missing, so APIs return a deliberate 503 until setup is complete. No production database/media migration or domain cutover has been performed.
 
-Verified locally: 56 backend tests on Node.js 24, the production build, a clean production dependency audit, an isolated Postgres dump/restore, and Chrome checks for booking/back navigation, mobile calendar controls, pending/confirmed/expired/cancelled presentation, admin layout, video playback, and an empty gallery. GitHub CI also validates against Postgres 17. Stripe transport is stubbed in automated tests; real Stripe test payments and Blob provider callbacks still require the configured cloud resources.
+Verified locally: 63 backend tests on Node.js 24, the production build, a clean production dependency audit, an isolated Postgres dump/restore, and Chrome checks for booking/back navigation, mobile calendar controls, pending/confirmed/expired/cancelled presentation, admin layout, video playback, and an empty gallery. GitHub CI also validates against Postgres 17. Stripe transport is stubbed in automated tests; real Stripe test payments and Blob provider callbacks still require the configured cloud resources.
 
-The next owner steps are the Vercel Pro upgrade and Stripe account setup. Then provision the production/preview stores, configure secrets, migrate the existing content, verify provider integrations, and attach `www.l2cuts.com` using the instructions below. The original SQLite database, media, and admin credentials have been preserved.
+The next owner steps are Stripe account setup and resource credentials; no Pro upgrade is required for a non-commercial test deployment. Then provision the production/preview stores, configure secrets, migrate the existing content, verify provider integrations, and attach `www.l2cuts.com` using the instructions below. The original SQLite database, media, and admin credentials have been preserved.
 
 ## 1. Accounts and resources
 
 Use the existing GitHub repository and create a Vercel project named `l2cuts`. Set its Node version to **24.x**, framework to **Other**, build command to `npm run build`, and output directory to `dist`; `vercel.json` supplies these build/routing settings. The production branch is `main`.
 
-Commercial use and the every-minute payment reconciliation job require **Vercel Pro**. The account owner must select the plan and confirm billing. Create and activate the Stripe account, including business details, support contact, identity verification, and bank/payout setup, before enabling live payments. Never put credentials in Git or chat.
+The code uses only Hobby-compatible deployment features. [Vercel's Hobby policy](https://vercel.com/docs/plans/hobby) still limits it to personal, non-commercial use; a live paid barber business needs hosting whose terms permit commercial use. For a Hobby demo, keep Stripe in test mode. The owner handles any account or billing terms; this setup does not upgrade the account. Create and activate the Stripe account, including business details, support contact, identity verification, and bank/payout setup, before enabling live payments. Never put credentials in Git or chat.
 
-Create a Vercel-managed **Neon Postgres** integration in `iad1`/US East and a **public Vercel Blob** store. Use Neon Launch (or higher) and set the restore-history window to seven days; Launch defaults to a shorter window, so explicitly verify the setting. Blob contains public media only—never store database backups in the public media store.
+Create a Vercel-managed **Neon Postgres** integration in `iad1`/US East and a **public Vercel Blob** store. For a small demo, Neon Free is compatible; check its compute, storage and network quotas. [Neon Free retains up to six hours of restore history](https://neon.com/docs/introduction/plans); longer retention is an optional database-plan decision, independent of Vercel. [Vercel Blob is available on Hobby within its included allowance](https://vercel.com/docs/vercel-blob/usage-and-pricing). Blob contains public media only—never store database backups in the public media store.
 
 Use separate Neon databases/branches, Blob stores, Stripe test keys, and app secrets for preview and production. Keep Vercel preview protection enabled. Enable Protection Bypass for Automation and expose its generated `VERCEL_AUTOMATION_BYPASS_SECRET` to the preview environment. Register Stripe's preview webhook with the `x-vercel-protection-bypass` query parameter, as described below; the app adds it to Blob's signed callback URL automatically. This secret stays in provider configuration and never grants app-admin access. Do not disable app authentication to test callbacks.
 
@@ -24,7 +24,7 @@ Set these in Vercel **Project → Settings → Environment Variables**, with dis
 
 | Variable | Value |
 | --- | --- |
-| `APP_ORIGIN` | `https://www.l2cuts.com` in production |
+| `APP_ORIGIN` | `https://l2cuts.vercel.app` for the Hobby demo; `https://www.l2cuts.com` after custom-domain activation |
 | `DATABASE_URL` | Neon's pooled Postgres connection URL with TLS |
 | `DATABASE_URL_DIRECT` | Neon's direct connection URL, for local migration/backup tools |
 | `APP_SECRET` | Independently generated random secret, at least 32 characters |
@@ -87,19 +87,19 @@ Run `npm run preflight` with the deployment's environment loaded. For preview, i
 
 Do not use real appointments for these checks. Inspect Vercel function errors and Stripe webhook delivery history, including callback accessibility through preview protection.
 
-## 5. Production activation
+## 5. Live activation (hosting terms apply)
 
 Repeat migrations/import against the production resources. Configure a separate **live-mode** webhook at `https://www.l2cuts.com/api/stripe/webhook` with the same events and its own signing secret. Complete Stripe activation, enable payment receipts, and run preflight with production environment values (`VERCEL_ENV=production`).
 
 The domain already uses Vercel DNS. Add **www.l2cuts.com** and **l2cuts.com** to this project using the values Vercel provides. Preserve unrelated DNS records. `vercel.json` redirects the apex to `www`; verify HTTPS and redirects after the domain is attached. The generated `vercel.app` hostname is not the production booking origin.
 
-Confirm the production cron job is enabled and `/api/health` returns `{"ok":true}`. Check home/gallery content and the existing admin login after the final deployment. Record the release commit and migration state. Require a successful test-mode end-to-end checkout before opening live bookings.
+Confirm the daily cleanup job is enabled and `/api/health` returns `{"ok":true}`. The schedule is `0 8 * * *` (08:00 UTC daily); Hobby can invoke it within that hour, so it is not used as an exact booking-expiry timer. Check home/gallery content and the existing admin login after the final deployment. Record the release commit and migration state. Require a successful test-mode end-to-end checkout before opening live bookings.
 
 ## 6. Monitoring, backups, and recovery
 
-Enable Vercel error notifications and monitor Stripe's failed webhook deliveries. Application logs contain event names and opaque IDs, not customer contact details, credentials, raw payment payloads, or private management tokens. Monitor `payment_hold_reconciliation_failed`; the system keeps a reservation blocked when Stripe cannot be checked. A rare session-creation failure unresolved for 23 hours requires matching the booking ID to the Stripe Dashboard before correcting its session reference; never force-release an ambiguous hold while payment could still complete.
+Enable Vercel error notifications and monitor Stripe's failed webhook deliveries. Application logs contain event names and opaque IDs, not customer contact details, credentials, raw payment payloads, or private management tokens. Monitor `payment_hold_reconciliation_failed`; the system keeps a reservation blocked when Stripe cannot be checked. Availability requests recheck up to three overdue holds for that date; booking submissions do the same before claiming a slot. Shared one-minute leases avoid repeated provider calls across instances. The daily job checks up to eight holds per invocation, with four-second provider timeouts and no automatic provider retries. Apply migration `004_hold_rechecks.sql` with `db:migrate` before using this release. A rare session-creation failure unresolved for 23 hours requires matching the booking ID to the Stripe Dashboard before correcting its session reference; never force-release an ambiguous hold while payment could still complete.
 
-Use Neon's restore history/PITR and retain at least seven days. Before risky migrations, take an additional private Postgres backup using `pg_dump` with the direct database connection and a client version matching the server. Keep dumps outside Git and outside the public Blob store. Media has immutable filenames; keep the Blob store alongside the database and do not delete referenced files during a rollback.
+Use Neon's restore history/PITR within the selected plan's retention. Free has a six-hour window, so keep additional private exports when longer recovery coverage is needed. Seven-day managed retention is an optional paid database feature, not an app or Vercel requirement. Before risky migrations, take an additional private Postgres backup using `pg_dump` with the direct database connection and a client version matching the server. Keep dumps outside Git and outside the public Blob store. Media has immutable filenames; keep the Blob store alongside the database and do not delete referenced files during a rollback.
 
 Restore verification: restore a backup into a **new isolated database/Neon branch**, connect a protected test deployment with Stripe test keys, and compare settings, service price/duration, row counts, admin sign-in, and media playback. Do not test a restore over production. Record the successful restore date and source snapshot before launch and repeat periodically.
 

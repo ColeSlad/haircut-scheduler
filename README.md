@@ -40,11 +40,17 @@ Haircut is the only service. New installations default to 45 minutes and $40; mi
 
 The studio time zone drives availability, including daylight-saving changes. Starts are offered every 15 minutes, must fit within working hours, and respect days off, minimum notice, and the booking horizon. Service edits affect new reservations; existing ones retain their booked price and duration. Hours changes do not silently cancel appointments. Upcoming paid appointments or pending checkouts prevent a time-zone change.
 
-Checkout reserves a slot for 31 minutes. Online appointments require at least 32 minutes of notice so checkout expires before the appointment starts, even if an imported configuration used less notice. Pending and confirmed bookings cannot overlap, enforced by both a database transaction and a Postgres exclusion constraint. A slot is released only when Stripe verifies expiry/cancellation, never just because a local timer elapsed. Failed checks keep the hold and are retried by the scheduled reconciliation job. Webhook processing and checkout retries are idempotent.
+Checkout reserves a slot for 31 minutes. Online appointments require at least 32 minutes of notice so checkout expires before the appointment starts, even if an imported configuration used less notice. Pending and confirmed bookings cannot overlap, enforced by both a database transaction and a Postgres exclusion constraint. A slot is released only when Stripe verifies expiry/cancellation, never just because a local timer elapsed. Stripe webhooks normally release expired sessions. Availability reads and new booking attempts recheck overdue holds for the requested date, with short provider timeouts and a shared one-minute retry lease. Failed checks keep the hold reserved. A bounded daily cleanup job provides additional recovery, so no frequent Vercel cron is required. Webhook processing and checkout retries are idempotent.
 
 Clients can cancel before the appointment starts. Cancellation does **not** automatically refund a payment. Admin issues full or partial refunds in Stripe; signed webhooks synchronize the refunded amount without changing appointment status. Stripe payment receipts require the receipt setting described in the deployment guide. No appointment confirmation email is promised.
 
 The private link uses `/booking#token`. Requests send its credential in an authorization header, keeping it out of access-log paths. Anyone with that link can manage the appointment; keep it private. Stripe receives only an opaque booking ID in metadata and return URLs. Returning from Checkout requires the browser's short-lived secure cookie, so use the same browser to complete checkout and save the resulting link.
+
+## Vercel Hobby compatibility
+
+The deployment uses one Node.js function in one region, a 60-second function limit, and one daily cleanup job (`0 8 * * *`, approximately 08:00 UTC). Booking availability does not depend on the daily job: signed Stripe webhooks and on-demand server checks handle expired payment holds. Automated tests guard the Hobby deployment limits.
+
+This is technical compatibility, not a commercial-use exemption. [Vercel reserves Hobby for personal, non-commercial projects](https://vercel.com/docs/plans/hobby). Use Stripe test mode for a Hobby demo; a live paid barber business must use hosting permitted by the provider's terms. Neon Free and Vercel Blob's included Hobby allowance can support a small demo within their quotas; the app does not require a paid Neon plan.
 
 ## Storage and security
 
