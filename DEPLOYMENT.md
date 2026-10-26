@@ -1,5 +1,13 @@
 # Deploy L2 Cuts
 
+## Launch checkpoint — October 25, 2026
+
+The code is pushed to `main`, and the [l2cuts Vercel project](https://vercel.com/cole-sladowskys-projects/l2cuts) is created and linked to the repository. Its first deployment is blocked by Hobby's daily-only cron limit; the configured reconciliation job runs every minute and requires Pro. No production database/media migration or domain cutover has been performed.
+
+Verified locally: 56 backend tests on Node.js 24, the production build, a clean production dependency audit, an isolated Postgres dump/restore, and Chrome checks for booking/back navigation, mobile calendar controls, pending/confirmed/expired/cancelled presentation, admin layout, video playback, and an empty gallery. GitHub CI also validates against Postgres 17. Stripe transport is stubbed in automated tests; real Stripe test payments and Blob provider callbacks still require the configured cloud resources.
+
+The next owner steps are the Vercel Pro upgrade and Stripe account setup. Then provision the production/preview stores, configure secrets, migrate the existing content, verify provider integrations, and attach `www.l2cuts.com` using the instructions below. The original SQLite database, media, and admin credentials have been preserved.
+
 ## 1. Accounts and resources
 
 Use the existing GitHub repository and create a Vercel project named `l2cuts`. Set its Node version to **24.x**, framework to **Other**, build command to `npm run build`, and output directory to `dist`; `vercel.json` supplies these build/routing settings. The production branch is `main`.
