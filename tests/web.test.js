@@ -7,7 +7,7 @@ import { createWebHandler } from '../server/web.js';
 import { runtimeConfig } from '../server/config.js';
 import { localParts } from '../server/scheduling.js';
 import twilio from 'twilio';
-import { twilioSender } from '../server/notifications.js';
+import { twilioSender, createNotifications } from '../server/notifications.js';
 
 test('public deployment startup requires core configuration, independently of optional integrations', () => {
   assert.throws(() => runtimeConfig({}), { status: 503 });
@@ -132,4 +132,31 @@ test('SMS delivery callbacks accept provider form data only with a valid SDK sig
   assert.equal((await send('forged')).status, 403);
   assert.equal((await send(signature)).status, 200);
   assert.equal((await db.prepare('SELECT state FROM sms_notifications').get()).state, 'delivered');
+});
+
+test('daily SMS recovery still runs when the payment provider is unavailable', async (t) => {
+  const db = await testDatabase(t);
+  const origin = 'https://www.l2cuts.com';
+  const provider = fakeProvider();
+  let sent = 0;
+  const notificationSender = { configured: () => true, validate: () => false, async send() { sent++; return { sid: `SM${'b'.repeat(32)}`, status: 'queued' }; } };
+  const handler = createWebHandler(db, { origin, provider, notificationSender });
+  const day = new Date(); do { day.setUTCDate(day.getUTCDate() + 1); } while (day.getUTCDay() !== 2);
+  const input = { requestId: randomUUID(), firstName: 'Test', lastName: 'Client', phone: '555-123-4567', date: day.toISOString().slice(0, 10), time: '09:00' };
+  assert.equal((await handler(new Request(`${origin}/api/bookings`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify(input) }))).status, 201);
+  await db.prepare('UPDATE bookings SET hold_expires_at = ?').run(Date.now() - 1000);
+  provider.stripe.checkout.sessions.retrieve = async () => { throw new Error('Isolated provider outage'); };
+  const notifications = createNotifications(db, { origin, sender: notificationSender });
+  await notifications.save({ phone: '+15559990000', enabled: false });
+  await notifications.queueTest();
+  const previous = process.env.CRON_SECRET;
+  process.env.CRON_SECRET = 'isolated-sms-recovery-secret';
+  try {
+    const response = await handler(new Request(`${origin}/api/cron/payments`, { headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` } }));
+    assert.equal(response.status, 503);
+    assert.equal(sent, 1);
+  } finally {
+    if (previous === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = previous;
+  }
 });

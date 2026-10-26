@@ -43,8 +43,9 @@ export function createApi(db, { origin, secure, provider, secret, notificationSe
     }
     if (path === '/api/cron/payments' && method === 'GET') {
       if (!process.env.CRON_SECRET || tokenHash(req.headers.authorization || '') !== tokenHash(`Bearer ${process.env.CRON_SECRET}`)) throw new HttpError(401, 'Unauthorized.');
-      const result = await payments.sweep();
-      await notifications.deliver({ limit: 3 });
+      let result;
+      try { result = await payments.sweep(); }
+      finally { await notifications.deliver({ limit: 3 }); }
       return json(result);
     }
     if (/^\/api\/checkout\/return\/[a-f0-9-]{36}$/.test(path) && method === 'GET') {
