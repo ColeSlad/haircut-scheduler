@@ -300,6 +300,12 @@ code { font-family: monospace; background: var(--soft); padding: 2px 4px; font-s
 .gallery-editor > .form-grid { margin-top: 0; }
 .gallery-editor .remove-row { justify-self: start; }
 #settings-form, #reviews-form { max-width: 900px; }
+#notifications-form { max-width: 700px; }
+.notification-toggle { margin-top: 20px; }
+.notification-heading { margin-top: 36px; }
+.notification-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-block: 16px; border-bottom: 1px solid var(--line); }
+.notification-row p { margin-top: 6px; font-size: 14px; }
+.notification-row small { display: block; margin-top: 6px; color: var(--muted); }
 .review-rating-input { max-width: 240px; }
 .review-rating-input + .fine-print { margin-top: 12px; }
 
