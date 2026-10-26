@@ -2,11 +2,11 @@
 
 ## Launch checkpoint — October 25, 2026
 
-The code is pushed to `main`, and the [l2cuts Vercel project](https://vercel.com/cole-sladowskys-projects/l2cuts) is created and linked to the repository. The Hobby-compatible build now deploys successfully at `https://l2cuts.vercel.app`: it uses a daily cleanup job with webhook-driven and on-demand payment reconciliation. The previous minute-cron deployment blocker is resolved. Runtime credentials are still missing, so APIs return a deliberate 503 until setup is complete. No production database/media migration or domain cutover has been performed.
+The code is pushed to `main`, and the [l2cuts Vercel project](https://vercel.com/cole-sladowskys-projects/l2cuts) is created and linked to the repository. The Hobby-compatible build deploys successfully at `https://l2cuts.vercel.app`: it uses a daily cleanup job with webhook-driven and on-demand payment reconciliation. The live API still returns 503 because its database and server secret are not configured. Startup now checks only the core page requirements; missing payment or upload configuration no longer prevents the homepage or admin from loading once the database is ready.
 
-Verified locally: 63 backend tests on Node.js 24, the production build, a clean production dependency audit, an isolated Postgres dump/restore, and Chrome checks for booking/back navigation, mobile calendar controls, pending/confirmed/expired/cancelled presentation, admin layout, video playback, and an empty gallery. GitHub CI also validates against Postgres 17. Stripe transport is stubbed in automated tests; real Stripe test payments and Blob provider callbacks still require the configured cloud resources.
+Verified locally: 65 backend tests on Node.js 24, the production build, a clean production dependency audit, an isolated Postgres dump/restore, and Chrome checks for booking/back navigation, mobile calendar controls, pending/confirmed/expired/cancelled presentation, admin layout, video playback, and an empty gallery. GitHub CI also validates against Postgres 17. Stripe transport is stubbed in automated tests; real Stripe test payments and Blob provider callbacks still require the configured cloud resources.
 
-The next owner steps are Stripe account setup and resource credentials; no Pro upgrade is required for a non-commercial test deployment. Then provision the production/preview stores, configure secrets, migrate the existing content, verify provider integrations, and attach `www.l2cuts.com` using the instructions below. The original SQLite database, media, and admin credentials have been preserved.
+A public Blob store named `l2cuts-blob` has been created and connected to Production and Preview; it contains no uploaded media yet. Neon creation is awaiting the owner's acceptance of the displayed marketplace terms, and production server-secret setup is awaiting approval. No production database/media migration or domain cutover has been performed. Stripe account setup is also outstanding. The original SQLite database, media, and admin credentials have been preserved.
 
 ## 1. Accounts and resources
 
@@ -35,7 +35,9 @@ Set these in Vercel **Project → Settings → Environment Variables**, with dis
 | `STRIPE_WEBHOOK_SECRET` | Signing secret for that environment's webhook endpoint |
 | `VERCEL_AUTOMATION_BYPASS_SECRET` | Preview only: Vercel-generated Protection Bypass for Automation secret |
 
-Generate each random secret independently with `openssl rand -hex 32`. Keep `APP_SECRET` stable while checkouts are in progress. Production refuses incomplete configuration rather than falling back to local disk or unpaid bookings. Preview uses Vercel's generated branch/deployment hostname for its browser origin and return URLs. Enable Vercel system environment variables.
+Generate each random secret independently with `openssl rand -hex 32`. Keep `APP_SECRET` stable while checkouts are in progress. Core pages require `DATABASE_URL`, `APP_SECRET`, and an HTTPS origin. With Vercel system environment variables enabled, the generated production hostname can supply the origin until `APP_ORIGIN` is set. Preview uses Vercel's generated branch/deployment hostname for its browser origin and return URLs.
+
+Stripe, Blob, and cron configuration is checked when those features are used. Until Stripe is configured, the homepage remains available, the booking page says online booking is unavailable, and the server rejects new bookings without creating a reservation. There is no fallback to local disk or unpaid bookings. `npm run preflight` intentionally requires the complete launch configuration, including payments, uploads, and cleanup; passing the core page checks alone does not mean bookings are ready.
 
 Use an ignored environment file locally for migrations/imports, containing the **target** database and Blob credentials. The CLI accepts `.env`; alternatively run individual scripts using `node --env-file=YOUR_IGNORED_FILE scripts/migrate.js`. Never point the automated test URL at a live database.
 
@@ -58,6 +60,8 @@ npm run db:import
 ```
 
 **Do not run `db:seed` before importing.** The target must be empty. Media is uploaded directly to Blob using content-addressed filenames, and database URLs are rewritten in one transaction. Counts must match before commit. Repeating a completed import is a no-op and preserves later admin edits. Password hashes and existing booking IDs/private-link hashes are retained; sessions are excluded, so admins sign in again. Historical bookings remain marked as payment not recorded and are never charged retroactively.
+
+Alternatively, upload the legacy media through the authenticated Vercel Blob dashboard, then import using an ignored local mapping file instead of bringing the Blob read-write token onto the local machine. Put videos in `videos/`, posters in `posters/`, and photos in `photos/`. The JSON file must contain the store's exact `origin` and an `assets` object mapping each original `/uploads/FILENAME` path to its uploaded public URL. Run `npm run db:import -- --media-map=data/deployment-media.json` with the target database configured. Every local media reference needs a mapping; URLs outside the specified store or the expected folder are rejected. Keep this deployment-specific file under ignored `data/`.
 
 Keep the original backup until the new site, videos, settings, reviews, and login have been verified. For a brand-new site without legacy data, use `db:seed` and `admin:create` instead. To add the second admin after import, run `admin:create` with the new email; do not reset the existing account just for testing.
 
