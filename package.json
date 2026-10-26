@@ -5,7 +5,7 @@
   "type": "module",
   "description": "A single-barber booking website with a private admin workspace.",
   "engines": {
-    "node": ">=24.0.0"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "node --env-file-if-exists=.env scripts/dev.js",
@@ -15,6 +15,7 @@
     "db:migrate": "node --env-file-if-exists=.env scripts/migrate.js",
     "db:seed": "node --env-file-if-exists=.env scripts/seed.js",
     "db:import": "node --env-file-if-exists=.env scripts/import-sqlite.js",
+    "preflight": "node --env-file-if-exists=.env scripts/preflight.js",
     "test": "node --test tests/*.test.js",
     "check": "node scripts/check.js"
   },
