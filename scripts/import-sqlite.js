@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { put, head, BlobNotFoundError } from '@vercel/blob';
 import { openPostgres, migrate } from '../server/postgres.js';
 import { imageType, trustedBlobUrl } from '../server/storage.js';
+import { importLegacyReviews } from '../server/reviews.js';
 
 const tables = ['settings', 'services', 'hours', 'days_off', 'bookings', 'admin', 'gallery', 'videos', 'home_videos', 'review_content'];
 
@@ -52,7 +53,7 @@ export async function uploadMedia(path, kind, dataDir, { inspect = head, write =
 
 export async function importLegacy(db, source, { dataDir, upload = uploadMedia, blobOrigin = process.env.BLOB_PUBLIC_ORIGIN } = {}) {
   if (await db.prepare("SELECT name FROM data_imports WHERE name = 'legacy-sqlite-v1'").get()) return { alreadyImported: true };
-  for (const table of tables) if ((await db.prepare(`SELECT count(*) AS n FROM ${table}`).get()).n) throw new Error('Import requires an empty target database. Do not seed it first.');
+  for (const table of [...tables, 'reviews']) if ((await db.prepare(`SELECT count(*) AS n FROM ${table}`).get()).n) throw new Error('Import requires an empty target database. Do not seed it first.');
   const rows = structuredClone(source);
   const media = new Map();
   async function copy(value, kind) {
@@ -69,6 +70,7 @@ export async function importLegacy(db, source, { dataDir, upload = uploadMedia, 
   for (const row of rows.home_videos) { row.video = await copy(row.video, 'video'); row.poster = await copy(row.poster, 'poster'); }
   await db.transaction(async (tx) => {
     if (await tx.prepare("SELECT name FROM data_imports WHERE name = 'legacy-sqlite-v1'").get()) return;
+    if ((await tx.prepare('SELECT count(*) AS n FROM reviews').get()).n) throw new Error('Target data changed while importing. No data was overwritten.');
     for (const table of tables) {
       if ((await tx.prepare(`SELECT count(*) AS n FROM ${table}`).get()).n) throw new Error('Target data changed while importing. No data was overwritten.');
       // Column names come exclusively from the known legacy schema, never request input.
@@ -83,6 +85,7 @@ export async function importLegacy(db, source, { dataDir, upload = uploadMedia, 
       if (count !== rows[table].length) throw new Error(`Import count mismatch: ${table}`);
     }
     for (const { url, kind } of media.values()) await tx.prepare('INSERT INTO media_assets VALUES (?, ?, ?) ON CONFLICT DO NOTHING').run(url, kind, Date.now());
+    await importLegacyReviews(tx);
     // Sessions are intentionally excluded: existing admins sign in again with their unchanged passwords.
     await tx.prepare("INSERT INTO data_imports VALUES ('legacy-sqlite-v1', ?)").run(Date.now());
   });

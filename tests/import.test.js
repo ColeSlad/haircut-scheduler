@@ -61,6 +61,7 @@ test('SQLite import preserves edits, password hashes and media, and never overwr
   assert.equal((await publicData(db)).services[0].price, 3000);
   assert.equal((await db.prepare('SELECT password_hash FROM admin').get()).password_hash, 'preserved-scrypt-hash');
   assert.equal((await db.prepare('SELECT value FROM review_content').get()).value, originalReviews);
+  assert.deepEqual(await db.prepare('SELECT name, text, stars, sample FROM reviews ORDER BY position').all(), JSON.parse(originalReviews).items.map(({ name, text, stars, sample }) => ({ name, text, stars, sample })));
   assert.equal((await db.prepare('SELECT count(*) AS n FROM sessions').get()).n, 0);
   assert((await publicData(db)).homeVideos[0].video.startsWith(origin));
   await db.exec("UPDATE services SET price = 3500 WHERE id = 'haircut'");

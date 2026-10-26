@@ -6,7 +6,7 @@ import { migrate } from '../server/postgres.js';
 test('Postgres migrations are repeatable and transactions roll back', async (t) => {
   const db = await testDatabase(t, false);
   await migrate(db);
-  assert.equal((await db.prepare('SELECT count(*) AS n FROM schema_migrations').get()).n, 6);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM schema_migrations').get()).n, 7);
   await assert.rejects(db.transaction(async (tx) => {
     await tx.prepare('INSERT INTO settings VALUES (1, ?)').run('private test');
     throw new Error('rollback');
