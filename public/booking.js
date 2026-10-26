@@ -2,7 +2,7 @@ import { $, $$, esc, money, timeLabel, dateLabel, todayIn, addDays, api, arrow, 
 
 export function mountScheduler(data, navigate) {
   const root = $('#main');
-  if (!data.services.length) { root.innerHTML = '<section class="section-shell centered-state"><h1>Booking unavailable</h1><p>Please contact the studio to book a haircut.</p></section>'; return; }
+  if (data.bookingEnabled === false || !data.services.length) { root.innerHTML = '<section class="section-shell centered-state"><h1>Booking unavailable</h1><p>Online booking is not available yet.</p></section>'; return; }
   const today = todayIn(data.settings.timezone);
   const last = addDays(today, data.settings.bookingDays);
   const state = { step: 1, service: data.services[0], date: '', time: '', slots: [], loading: false, month: today.slice(0, 7), details: {}, request: 0 };
