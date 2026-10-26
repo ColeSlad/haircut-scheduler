@@ -36,6 +36,12 @@ export function twilioSender(env = process.env, clientFactory = twilio) {
 
 const clean = (value) => String(value).replace(/\s+/g, ' ').trim();
 const deliveryState = (value) => ({ delivered: 'delivered', failed: 'failed', undelivered: 'failed', canceled: 'failed', accepted: 'accepted', queued: 'accepted', sending: 'accepted', sent: 'accepted' })[value];
+const diagnosticCode = value => /^[1-9]\d{0,7}$/.test(String(value)) ? String(value) : null;
+function sendFailureCode(error) {
+  const code = diagnosticCode(error.code);
+  const status = Number(error.status);
+  return code || (Number.isInteger(status) && status >= 400 && status < 600 ? `HTTP_${status}` : null);
+}
 export function notificationBody(booking, config, kind, origin) {
   const when = new Intl.DateTimeFormat('en-US', { timeZone: config.timezone, month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(booking.starts_at);
   const price = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(booking.price / 100);
@@ -98,10 +104,12 @@ export function createNotifications(db, { origin, sender = twilioSender() } = {}
         const result = await sender.send({ phone: job.phone, body: job.body, statusCallback: callbackUrl(origin, `/api/sms/status?attempt=${job.attempt_id}`) });
         if (!/^SM[a-f\d]{32}$/i.test(result.sid || '')) throw new Error('Invalid SMS provider response');
         const state = deliveryState(result.status) || 'accepted';
-        await db.prepare(`UPDATE sms_notifications SET provider_sid = COALESCE(provider_sid, ?), state = CASE WHEN state = 'sending' THEN ? ELSE state END, updated_at = ? WHERE id = ? AND attempt_id = ?`).run(result.sid, state, Date.now(), job.id, job.attempt_id);
+        const code = state === 'failed' ? diagnosticCode(result.errorCode) : null;
+        await db.prepare(`UPDATE sms_notifications SET provider_sid = COALESCE(provider_sid, ?), error_code = CASE WHEN state = 'sending' THEN ? ELSE error_code END,
+          state = CASE WHEN state = 'sending' THEN ? ELSE state END, updated_at = ? WHERE id = ? AND attempt_id = ?`).run(result.sid, code, state, Date.now(), job.id, job.attempt_id);
       } catch (error) {
         const definiteFailure = Number(error.status) >= 400 && Number(error.status) < 500;
-        const code = /^\d{1,8}$/.test(String(error.code)) ? String(error.code) : null;
+        const code = sendFailureCode(error);
         await db.prepare(`UPDATE sms_notifications SET state = ?, error_code = ?, updated_at = ? WHERE id = ? AND attempt_id = ? AND state = 'sending'`).run(definiteFailure ? 'failed' : 'unknown', code, Date.now(), job.id, job.attempt_id);
         console.error('barber_notification_send_failed', job.id, code || 'unknown');
       }
@@ -116,10 +124,11 @@ export function createNotifications(db, { origin, sender = twilioSender() } = {}
     if (!/^[a-f\d-]{36}$/i.test(attempt || '') || !/^SM[a-f\d]{32}$/i.test(params.MessageSid || '')) throw new HttpError(400, 'Invalid SMS callback.');
     const state = deliveryState(params.MessageStatus);
     if (!state) return;
-    const code = /^\d{1,8}$/.test(params.ErrorCode || '') ? params.ErrorCode : null;
-    await db.prepare(`UPDATE sms_notifications SET provider_sid = COALESCE(provider_sid, ?), state = ?, error_code = ?, updated_at = ?
+    const code = diagnosticCode(params.ErrorCode);
+    await db.prepare(`UPDATE sms_notifications SET provider_sid = COALESCE(provider_sid, ?), state = ?,
+      error_code = CASE WHEN ? = 'failed' THEN COALESCE(?, NULLIF(error_code, '0')) ELSE NULL END, updated_at = ?
       WHERE attempt_id = ? AND phone = ? AND (provider_sid IS NULL OR provider_sid = ?) AND state != 'cancelled'
-      AND (state != 'delivered' OR ? = 'delivered') AND (state != 'failed' OR ? IN ('failed', 'delivered'))`).run(params.MessageSid, state, code, Date.now(), attempt, params.To, params.MessageSid, state, state);
+      AND (state != 'delivered' OR ? = 'delivered') AND (state != 'failed' OR ? IN ('failed', 'delivered'))`).run(params.MessageSid, state, state, code, Date.now(), attempt, params.To, params.MessageSid, state, state);
   }
   return { enqueue, adminData, save, queueTest, retry, flush, deliver, callback };
 }

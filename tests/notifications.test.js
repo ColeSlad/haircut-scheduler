@@ -122,6 +122,32 @@ test('delivery callbacks use the SDK signature, match the attempt and recipient,
   assert.equal((await db.prepare('SELECT state FROM sms_notifications').get()).state, 'delivered');
 });
 
+test('a zero provider code falls back to the HTTP rejection without storing raw error details', async t => {
+  const { db, notifications, sender } = await fixture(t);
+  const id = await notifications.queueTest();
+  sender.send = async () => { throw Object.assign(new Error(`Sensitive provider response ${env.TWILIO_AUTH_TOKEN}`), { status: 400, code: 0 }); };
+  await notifications.deliver({ id });
+  const job = await db.prepare('SELECT * FROM sms_notifications WHERE id = ?').get(id);
+  assert.equal(job.state, 'failed');
+  assert.equal(job.error_code, 'HTTP_400');
+  assert(!JSON.stringify(await notifications.adminData()).includes(env.TWILIO_AUTH_TOKEN));
+  assert.equal((await notifications.adminData()).recent[0].error_code, 'HTTP_400');
+});
+
+test('failed message responses retain their diagnostic and zero callbacks cannot erase it', async t => {
+  const { db, notifications, sender } = await fixture(t);
+  const id = await notifications.queueTest();
+  sender.send = async () => ({ sid: `SM${'c'.repeat(32)}`, status: 'failed', errorCode: 21608 });
+  await notifications.deliver({ id });
+  const job = await db.prepare('SELECT * FROM sms_notifications WHERE id = ?').get(id);
+  assert.equal(job.state, 'failed'); assert.equal(job.error_code, '21608');
+  await notifications.callback(...signedCallback(job, 'failed', { ErrorCode: '0' }));
+  assert.equal((await db.prepare('SELECT error_code FROM sms_notifications WHERE id = ?').get(id)).error_code, '21608');
+  await notifications.callback(...signedCallback(job, 'delivered', { ErrorCode: '0' }));
+  const delivered = await db.prepare('SELECT state, error_code FROM sms_notifications WHERE id = ?').get(id);
+  assert.equal(delivered.state, 'delivered'); assert.equal(delivered.error_code, null);
+});
+
 test('an interrupted send becomes unknown and can be resolved by its signed callback without another send', async (t) => {
   const { db, notifications, row, sent } = await fixture(t);
   await notifications.enqueue(db, row, 'confirmed');
