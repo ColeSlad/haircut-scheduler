@@ -181,5 +181,8 @@ export function createPayments(db, { origin, provider = paymentProvider } = {}) 
     return result;
   }
 
-  return { start, reconcile, cancel, webhook, sweep, refreshAvailability, managementToken };
+  function configured() {
+    try { get(); return true; } catch { return false; }
+  }
+  return { start, reconcile, cancel, webhook, sweep, refreshAvailability, managementToken, configured };
 }

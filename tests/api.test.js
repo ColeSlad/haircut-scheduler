@@ -66,7 +66,7 @@ test('public data excludes appointments, login credentials, and tokens', async (
   const { request } = await fixture(t);
   const result = await request('/api/public');
   assert.equal(result.status, 200);
-  assert.deepEqual(Object.keys(result.body).sort(), ['gallery', 'homeVideos', 'hours', 'reviews', 'services', 'settings', 'videos']);
+  assert.deepEqual(Object.keys(result.body).sort(), ['bookingEnabled', 'gallery', 'homeVideos', 'hours', 'reviews', 'services', 'settings', 'videos']);
   assert.equal(result.headers['cache-control'], 'no-store');
 });
 test('private admin endpoints and mutations require authentication', async (t) => {

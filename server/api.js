@@ -48,7 +48,7 @@ export function createApi(db, { origin, secure, provider, storage = createStorag
       await db.prepare('SELECT id FROM settings WHERE id = 1').get().then((row) => { if (!row) throw new HttpError(503, 'Setup incomplete.'); });
       return json({ ok: true });
     }
-    if (path === '/api/public' && method === 'GET') return json((await publicData(db)));
+    if (path === '/api/public' && method === 'GET') return json({ ...(await publicData(db)), bookingEnabled: payments.configured() });
     if (path === '/api/availability' && method === 'GET') {
       const date = url.searchParams.get('date');
       await payments.refreshAvailability(date);

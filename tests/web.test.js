@@ -7,12 +7,32 @@ import { createWebHandler } from '../server/web.js';
 import { runtimeConfig } from '../server/config.js';
 import { localParts } from '../server/scheduling.js';
 
-test('deployment configuration requires durable resources and keeps preview Stripe keys in test mode', () => {
+test('public deployment startup requires core configuration, independently of optional integrations', () => {
   assert.throws(() => runtimeConfig({}), { status: 503 });
   const env = { APP_ORIGIN: 'https://www.l2cuts.com', DATABASE_URL: 'postgres://fixture', BLOB_PUBLIC_ORIGIN: 'https://fixture.public.blob.vercel-storage.com', BLOB_READ_WRITE_TOKEN: 'fixture', CRON_SECRET: 'x'.repeat(32), APP_SECRET: 'y'.repeat(32), STRIPE_SECRET_KEY: 'sk_test_fixture', STRIPE_WEBHOOK_SECRET: 'whsec_fixture' };
   assert.equal(runtimeConfig(env).origin, env.APP_ORIGIN);
   assert.equal(runtimeConfig({ ...env, VERCEL_ENV: 'preview', VERCEL_URL: 'preview.vercel.app', VERCEL_AUTOMATION_BYPASS_SECRET: 'fixture-bypass' }).origin, 'https://preview.vercel.app');
   assert.throws(() => runtimeConfig({ ...env, APP_ORIGIN: 'http://www.l2cuts.com' }), { status: 503 });
+  const core = { APP_SECRET: 'y'.repeat(32), DATABASE_URL: 'postgres://fixture', VERCEL_PROJECT_PRODUCTION_URL: 'l2cuts.vercel.app' };
+  assert.equal(runtimeConfig(core).origin, 'https://l2cuts.vercel.app');
+  assert.equal(runtimeConfig({ ...core, APP_ORIGIN: 'https://www.l2cuts.com' }).origin, 'https://www.l2cuts.com');
+  assert.equal(runtimeConfig({ ...core, VERCEL_ENV: 'preview', VERCEL_URL: 'preview.vercel.app' }).origin, 'https://preview.vercel.app');
+  assert.throws(() => runtimeConfig({ ...core, DATABASE_URL: '' }), (error) => error.configurationKeys.includes('DATABASE_URL'));
+});
+
+test('public pages remain available while payments are unconfigured, without accepting unpaid bookings', async (t) => {
+  const db = await testDatabase(t);
+  const origin = 'https://l2cuts.vercel.app';
+  const handler = createWebHandler(db, { origin, provider: () => { const error = new Error('Payments unavailable'); error.status = 503; throw error; } });
+  const response = await handler(new Request(`${origin}/api/public`));
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.bookingEnabled, false);
+  assert.equal(data.services[0].name, 'Haircut');
+  assert.equal((await handler(new Request(`${origin}/api/admin/session`))).status, 200);
+  const checkout = await handler(new Request(`${origin}/api/bookings`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: '{}' }));
+  assert.equal(checkout.status, 503);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM bookings').get()).n, 0);
 });
 
 test('Vercel web adapter preserves signed raw bodies and keeps private tokens out of request URLs', async (t) => {

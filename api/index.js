@@ -10,8 +10,8 @@ export default {
         handler = createWebHandler(openStore(), config);
       }
       return await handler(request);
-    } catch {
-      console.error('api_configuration_unavailable');
+    } catch (error) {
+      console.error('api_configuration_unavailable', error.configurationKeys || []);
       return Response.json({ error: 'The service is temporarily unavailable. Please try again.' }, { status: 503, headers: { ...securityHeaders, 'Cache-Control': 'no-store' } });
     }
   },
