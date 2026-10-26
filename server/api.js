@@ -7,6 +7,7 @@ import { rateLimit } from './limits.js';
 import { createPayments } from './payments.js';
 import { createStorage } from './storage.js';
 import { createNotifications } from './notifications.js';
+import { listReviews, saveReviews, submitReview } from './reviews.js';
 
 const categories = ['Short cuts', 'Texture', 'Beards', 'Long cuts'];
 export function createApi(db, { origin, secure, provider, secret, notificationSender, storage = createStorage(db, { callbackOrigin: origin }) }) {
@@ -67,6 +68,11 @@ export function createApi(db, { origin, secure, provider, secret, notificationSe
       return json({ ok: true });
     }
     if (path === '/api/public' && method === 'GET') return json({ ...(await publicData(db)), bookingEnabled: true, onlinePaymentEnabled: payments.configured() });
+    if (path === '/api/reviews' && method === 'GET') return json(await listReviews(db, { before: url.searchParams.get('before') }));
+    if (path === '/api/reviews' && method === 'POST') {
+      await rateLimit(db, req, 'review', 5, 60 * 60_000);
+      return json(await submitReview(db, await readJson(req)), 201);
+    }
     if (path === '/api/availability' && method === 'GET') {
       const date = url.searchParams.get('date');
       await payments.refreshAvailability(date);
@@ -142,7 +148,7 @@ export function createApi(db, { origin, secure, provider, secret, notificationSe
         return json({ ok: true });
       }
       if (path === '/api/admin/data' && method === 'GET') {
-        return json({ ...(await publicData(db)), services: (await db.prepare("SELECT * FROM services WHERE id = 'haircut'").all()), bookings: (await db.prepare(`SELECT id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, status, created_at, payment_status, payment_method, payment_intent_id, amount_refunded, CASE WHEN checkout_session_id LIKE 'cs_test_%' THEN 'test' ELSE 'live' END AS payment_mode FROM bookings ORDER BY starts_at DESC`).all()), daysOff: (await db.prepare('SELECT * FROM days_off ORDER BY date').all()), notifications: await notifications.adminData() });
+        return json({ ...(await publicData(db)), services: (await db.prepare("SELECT * FROM services WHERE id = 'haircut'").all()), bookings: (await db.prepare(`SELECT id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, status, created_at, payment_status, payment_method, payment_intent_id, amount_refunded, CASE WHEN checkout_session_id LIKE 'cs_test_%' THEN 'test' ELSE 'live' END AS payment_mode FROM bookings ORDER BY starts_at DESC`).all()), daysOff: (await db.prepare('SELECT * FROM days_off ORDER BY date').all()), notifications: await notifications.adminData(), reviews: await listReviews(db, { admin: true }) });
       }
       if (path === '/api/admin/settings' && method === 'PUT') {
         const input = await readJson(req);
@@ -215,21 +221,10 @@ export function createApi(db, { origin, secure, provider, secret, notificationSe
         });
         return json({ ok: true });
       }
-      if (path === '/api/admin/reviews' && method === 'PUT') {
-        const { rating, items } = await readJson(req);
-        if (typeof rating !== 'number' || !Number.isFinite(rating) || rating < 0 || rating > 5 || Math.abs(rating * 100 - Math.round(rating * 100)) > 1e-8) throw new HttpError(400, 'Enter an overall rating from 0 to 5 with up to two decimal places.');
-        if (!Array.isArray(items) || items.length > 10) throw new HttpError(400, 'Keep up to 10 reviews.');
-        const ids = new Set();
-        const reviews = items.map((item) => {
-          if (!item || typeof item !== 'object') throw new HttpError(400, 'Enter valid review details.');
-          const id = item.id || randomUUID();
-          if (typeof id !== 'string' || id.length > 80 || ids.has(id)) throw new HttpError(400, 'Invalid review ID.');
-          ids.add(id);
-          if (!Number.isInteger(item.stars) || item.stars < 1 || item.stars > 5) throw new HttpError(400, 'Choose a star rating from 1 to 5.');
-          if (typeof item.sample !== 'boolean') throw new HttpError(400, 'Choose whether this is a placeholder review.');
-          return { id, name: textField(item.name, 'reviewer name', 80), text: textField(item.text, 'review text', 600), stars: item.stars, sample: item.sample };
-        });
-        (await db.prepare('UPDATE review_content SET value = ? WHERE id = 1').run(JSON.stringify({ rating, items: reviews })));
+      if (path === '/api/admin/reviews' && method === 'GET') return json(await listReviews(db, { admin: true, before: url.searchParams.get('before') }));
+      if (path === '/api/admin/reviews' && method === 'PUT') throw new HttpError(409, 'Refresh the page to use the updated review editor.');
+      if (path === '/api/admin/reviews' && method === 'PATCH') {
+        await saveReviews(db, (await readJson(req)).items);
         return json({ ok: true });
       }
       if (/^\/api\/admin\/bookings\/[^/]+$/.test(path) && method === 'PATCH') {

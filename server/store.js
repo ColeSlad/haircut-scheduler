@@ -1,5 +1,6 @@
 export { openPostgres as openStore } from './postgres.js';
 import { defaults } from './defaults.js';
+import { reviewSummary } from './reviews.js';
 export { defaults };
 
 export async function settings(db) {
@@ -16,9 +17,9 @@ export async function publicData(db) {
     db.prepare('SELECT * FROM gallery ORDER BY position').all(),
     db.prepare('SELECT * FROM videos ORDER BY position').all(),
     db.prepare('SELECT * FROM home_videos ORDER BY position').all(),
-    db.prepare('SELECT value FROM review_content WHERE id = 1').get(),
+    reviewSummary(db),
   ]);
-  return { settings: config, services, hours, gallery, videos, homeVideos, reviews: JSON.parse(reviews.value) };
+  return { settings: config, services, hours, gallery, videos, homeVideos, reviews };
 }
 
 // Explicit setup only. Starting a server or deploying never seeds/overwrites user content.

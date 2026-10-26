@@ -351,31 +351,46 @@ test('admin can curate TikTok videos with validated links and public ordering', 
   assert.equal((await request('/api/admin/videos', { method: 'PUT', headers, body: { videos: [] } })).status, 200);
   assert.deepEqual((await request('/api/public')).body.videos, []);
 });
-test('admin can edit the overall review score and individual reviews without partial invalid saves', async (t) => {
+test('admins select homepage reviews and hide or edit public reviews without replacing the collection', async (t) => {
   const { request, login } = await fixture(t);
   const initial = (await request('/api/public')).body.reviews;
-  assert.equal(initial.rating, 4.99);
-  assert.equal(initial.items.length, 0);
-  assert(initial.items.every((review) => review.stars === 5 && review.sample === true));
+  assert.equal(initial.rating, null); assert.equal(initial.items.length, 0);
   const headers = { cookie: await login() };
-  const review = { name: 'Sam Example', text: 'A review edited by the admin.', stars: 5, sample: false };
-  const body = { rating: 4.95, items: [review] };
-  assert.equal((await request('/api/admin/reviews', { method: 'PUT', headers, body })).status, 200);
+  const review = { name: 'Sam Example', text: 'A review edited by the admin.', stars: 5, sample: false, showOnHome: true, hidden: false };
+  assert.equal((await request('/api/admin/reviews', { method: 'PATCH', headers, body: { items: [review] } })).status, 200);
   const saved = (await request('/api/public')).body.reviews;
-  assert.equal(saved.rating, 4.95);
-  assert.deepEqual({ ...saved.items[0], id: undefined }, { ...review, id: undefined });
-  assert.equal(typeof saved.items[0].id, 'string');
-  for (const invalid of [
-    { ...body, rating: -1 }, { ...body, rating: 5.01 }, { ...body, rating: 4.999 }, { ...body, rating: '4.99' },
-    { ...body, items: null }, { ...body, items: Array(11).fill(review) }, { ...body, items: [null] },
-    { ...body, items: [{ ...review, name: '' }] }, { ...body, items: [{ ...review, text: 'x'.repeat(601) }] },
-    { ...body, items: [{ ...review, stars: 0 }] }, { ...body, items: [{ ...review, stars: 5.5 }] },
-    { ...body, items: [{ ...review, sample: 'false' }] }, { ...body, items: [saved.items[0], saved.items[0]] },
-  ]) assert.equal((await request('/api/admin/reviews', { method: 'PUT', headers, body: invalid })).status, 400);
+  assert.equal(saved.rating, 5); assert.equal(saved.items[0].name, review.name);
+  const stored = (await request('/api/admin/reviews', { headers })).body.items[0];
+  for (const items of [null, Array(101).fill(stored), [null], [{ ...stored, name: '' }], [{ ...stored, text: 'x'.repeat(601) }], [{ ...stored, stars: 0 }], [{ ...stored, stars: 5.5 }], [{ ...stored, sample: 'false' }], [stored, stored]]) assert.equal((await request('/api/admin/reviews', { method: 'PATCH', headers, body: { items } })).status, 400);
   assert.deepEqual((await request('/api/public')).body.reviews, saved);
-  assert.equal((await request('/api/admin/reviews', { method: 'PUT', headers: { ...headers, origin: 'https://other.example' }, body })).status, 403);
-  assert.equal((await request('/api/admin/reviews', { method: 'PUT', headers, body: { rating: 5, items: [] } })).status, 200);
-  assert.deepEqual((await request('/api/public')).body.reviews, { rating: 5, items: [] });
+  assert.equal((await request('/api/admin/reviews', { method: 'PUT', headers, body: { rating: 5, items: [] } })).status, 409);
+  assert.equal((await request('/api/admin/reviews', { method: 'PATCH', headers: { ...headers, origin: 'https://other.example' }, body: { items: [] } })).status, 403);
+  assert.equal((await request('/api/admin/reviews', { method: 'PATCH', body: { items: [] } })).status, 401);
+  assert.equal((await request('/api/admin/reviews', { method: 'PATCH', headers, body: { items: [{ ...stored, hidden: true, showOnHome: false }] } })).status, 200);
+  assert.equal((await request('/api/reviews')).body.items.length, 0);
+  assert.equal((await request('/api/admin/reviews', { headers })).body.items[0].hidden, true);
+});
+test('anyone can publish a review without an account, but cannot feature it or expose internal fields', async (t) => {
+  const { request } = await fixture(t);
+  const body = { name: '<script>Example</script>', text: 'A public review with <b>literal text</b>.', stars: 1, requestId: randomUUID(), sample: true, hidden: true, showOnHome: true };
+  const first = await request('/api/reviews', { method: 'POST', body });
+  assert.equal(first.status, 201); assert.equal(first.body.published, true);
+  assert.equal((await request('/api/reviews', { method: 'POST', body })).body.id, first.body.id);
+  const all = await request('/api/reviews');
+  assert.equal(all.status, 200); assert.equal(all.body.items.length, 1); assert.equal(all.body.rating, 1);
+  assert.deepEqual(Object.keys(all.body.items[0]).sort(), ['createdAt', 'id', 'name', 'sample', 'stars', 'text']);
+  assert.equal(all.body.items[0].sample, false);
+  assert.equal(all.body.items[0].name, body.name);
+  assert.match(all.headers['content-type'], /application\/json/);
+  assert.equal((await request('/api/public')).body.reviews.items.length, 0);
+  assert.equal((await request('/api/reviews?before=invalid')).status, 400);
+  assert.equal((await request('/api/reviews', { method: 'POST', headers: { origin: 'https://other.example' }, body })).status, 403);
+});
+test('public review submissions are rate-limited on the server', async (t) => {
+  const { request, db } = await fixture(t);
+  for (let i = 0; i < 5; i++) assert.equal((await request('/api/reviews', { method: 'POST', body: { name: 'Visitor', text: 'A review.', stars: 5, requestId: randomUUID() } })).status, 201);
+  assert.equal((await request('/api/reviews', { method: 'POST', body: { name: 'Visitor', text: 'Another review.', stars: 5, requestId: randomUUID() } })).status, 429);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM reviews').get()).n, 5);
 });
 test('static routing does not expose server files, databases, or environment files', async (t) => {
   const { request } = await fixture(t);
