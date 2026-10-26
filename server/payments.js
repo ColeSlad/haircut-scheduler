@@ -1,6 +1,6 @@
 import Stripe from 'stripe';
 import { createHmac, randomUUID } from 'node:crypto';
-import { createBooking, HttpError, tokenHash } from './scheduling.js';
+import { createBooking, HttpError, tokenHash, validDate } from './scheduling.js';
 
 export function paymentProvider(env = process.env) {
   const key = env.STRIPE_SECRET_KEY;
@@ -20,14 +20,14 @@ export function createPayments(db, { origin, provider = paymentProvider } = {}) 
   const bookingById = (id) => db.prepare('SELECT * FROM bookings WHERE id = ?').get(id);
   const managementToken = (id) => createHmac('sha256', get().secret).update(`booking:${id}`).digest('base64url');
 
-  async function ensureCheckout(booking) {
+  async function ensureCheckout(booking, requestOptions = {}) {
     const { stripe } = get();
-    if (booking.checkout_session_id) return stripe.checkout.sessions.retrieve(booking.checkout_session_id);
+    if (booking.checkout_session_id) return stripe.checkout.sessions.retrieve(booking.checkout_session_id, {}, requestOptions);
     // Stripe forgets idempotency keys after 24h. Never risk making a second session.
     if (Date.now() - booking.created_at >= 23 * 60 * 60_000) throw unavailable();
     let session;
     try {
-      session = await stripe.checkout.sessions.create(JSON.parse(booking.checkout_params), { idempotencyKey: `checkout:${booking.id}` });
+      session = await stripe.checkout.sessions.create(JSON.parse(booking.checkout_params), { ...requestOptions, idempotencyKey: `checkout:${booking.id}` });
     } catch (error) {
       // An invalid request without a cached session cannot have taken a payment.
       if (error.type === 'StripeInvalidRequestError' && error.statusCode === 400 && error.code !== 'idempotency_key_in_use') {
@@ -44,6 +44,7 @@ export function createPayments(db, { origin, provider = paymentProvider } = {}) 
     if (typeof input.requestId !== 'string' || !/^[a-f0-9-]{36}$/.test(input.requestId)) throw new HttpError(400, 'Refresh this page and try again.');
     const requestHash = tokenHash(input.requestId);
     const fingerprint = tokenHash(JSON.stringify([input.date, input.time, input.serviceId ?? 'haircut', input.firstName, input.lastName, input.phone]));
+    await refreshAvailability(input.date, now);
     const booking = await db.transaction(async (tx) => {
       const previous = await tx.prepare('SELECT * FROM bookings WHERE request_hash = ?').get(requestHash);
       if (previous) {
@@ -73,11 +74,11 @@ export function createPayments(db, { origin, provider = paymentProvider } = {}) 
     return { id: booking.id, token: managementToken(booking.id), checkoutUrl: session.url };
   }
 
-  async function reconcile(id, suppliedSession) {
+  async function reconcile(id, suppliedSession, requestOptions = {}) {
     const { stripe, live } = get();
     const before = await bookingById(id);
     if (!before?.checkout_params) throw new HttpError(404, 'Checkout not found.');
-    const session = suppliedSession || await ensureCheckout(before);
+    const session = suppliedSession || await ensureCheckout(before, requestOptions);
     if (session.client_reference_id !== id || session.metadata?.app !== 'l2cuts' || session.metadata?.booking_id !== id || session.livemode !== live ||
       session.amount_total !== before.price || session.currency !== 'usd' || session.mode !== 'payment' ||
       (before.checkout_session_id && session.id !== before.checkout_session_id)) throw new Error('Stripe checkout does not match the reservation.');
@@ -147,15 +148,38 @@ export function createPayments(db, { origin, provider = paymentProvider } = {}) 
     await db.prepare('INSERT INTO stripe_events VALUES (?, ?, ?) ON CONFLICT DO NOTHING').run(event.id, event.type, Date.now());
   }
 
-  async function sweep(now = Date.now()) {
-    const rows = await db.prepare("SELECT id FROM bookings WHERE status = 'pending' AND hold_expires_at <= ? ORDER BY hold_expires_at LIMIT 50").all(now);
+  async function recheckDue(now, date, limit) {
+    // A durable one-minute lease avoids duplicate Stripe requests across instances.
+    // Provider calls run after the claim commits, without holding a calendar lock.
+    const rows = await db.prepare(`WITH due AS (
+        SELECT id FROM bookings WHERE status = 'pending' AND hold_expires_at <= ? AND reconcile_after <= ?
+        ${date ? 'AND date = ?' : ''}
+        ORDER BY reconcile_after, hold_expires_at LIMIT ? FOR UPDATE SKIP LOCKED
+      ) UPDATE bookings AS booking SET reconcile_after = ? FROM due
+      WHERE booking.id = due.id RETURNING booking.id`).all(...[now, now, ...(date ? [date] : []), limit, now + 60_000]);
     let failed = 0;
-    for (const row of rows) { try { await reconcile(row.id); } catch { failed++; console.error('payment_hold_reconciliation_failed', row.id); } }
-    await db.prepare('DELETE FROM rate_limits WHERE expires_at <= ?').run(now);
-    await db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(now);
-    if (failed) throw unavailable();
-    return { checked: rows.length };
+    for (const row of rows) {
+      try { await reconcile(row.id, undefined, { timeout: 4000, maxNetworkRetries: 0 }); }
+      catch { failed++; console.error('payment_hold_reconciliation_failed', row.id); }
+    }
+    return { checked: rows.length, failed };
   }
 
-  return { start, reconcile, cancel, webhook, sweep, managementToken };
+  async function refreshAvailability(date, now = Date.now()) {
+    if (!validDate(date)) throw new HttpError(400, 'Choose a valid date.');
+    // Webhooks handle expiry normally. Recover missed events when slots are read
+    // or booked, so availability never depends on a frequent paid-plan cron.
+    return recheckDue(now, date, 3);
+  }
+
+  async function sweep(now = Date.now()) {
+    // Eight short checks fit within the 60-second Hobby function budget.
+    const result = await recheckDue(now, undefined, 8);
+    await db.prepare('DELETE FROM rate_limits WHERE expires_at <= ?').run(now);
+    await db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(now);
+    if (result.failed) throw unavailable();
+    return result;
+  }
+
+  return { start, reconcile, cancel, webhook, sweep, refreshAvailability, managementToken };
 }

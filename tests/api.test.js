@@ -158,6 +158,18 @@ test('simultaneous booking requests create only one appointment', async (t) => {
   assert.equal(results.filter((r) => r.status === 201).length, 1);
   assert.equal(results.filter((r) => r.status === 409).length, 7);
 });
+test('public availability releases a provider-expired hold even when its webhook was missed', async (t) => {
+  const { db, request, provider } = await fixture(t);
+  const input = await futureSlot(db);
+  const checkout = await request('/api/bookings', { method: 'POST', body: input });
+  assert.equal(checkout.status, 201);
+  [...provider.sessions.values()][0].status = 'expired';
+  await db.prepare('UPDATE bookings SET hold_expires_at = ? WHERE id = ?').run(Date.now() - 1, checkout.body.id);
+  const result = await request(`/api/availability?date=${input.date}`);
+  assert.equal(result.status, 200);
+  assert(result.body.slots.some((slot) => slot.time === input.time));
+  assert.equal((await db.prepare('SELECT status FROM bookings WHERE id = ?').get(checkout.body.id)).status, 'expired');
+});
 test('booking requires first name, last name, and phone without collecting email or notes', async (t) => {
   const { db, request } = await fixture(t);
   const input = (await futureSlot(db));

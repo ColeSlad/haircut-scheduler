@@ -51,6 +51,7 @@ export function createApi(db, { origin, secure, provider, storage = createStorag
     if (path === '/api/public' && method === 'GET') return json((await publicData(db)));
     if (path === '/api/availability' && method === 'GET') {
       const date = url.searchParams.get('date');
+      await payments.refreshAvailability(date);
       return json({ slots: (await availableSlots(db, date, url.searchParams.get('service') ?? undefined)), timezone: (await settings(db)).timezone });
     }
     if (path === '/api/bookings' && method === 'POST') {

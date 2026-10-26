@@ -66,7 +66,7 @@ test('expired clocks alone never release slots; provider-confirmed expiry and un
   await payments.sweep(now + 32 * 60_000);
   assert(!(await availableSlots(db, input.date, 'haircut', now)).some((slot) => slot.time === input.time));
   [...provider.sessions.values()][0].status = 'expired';
-  await payments.sweep(now + 32 * 60_000);
+  await payments.sweep(now + 33 * 60_000);
   assert((await availableSlots(db, input.date, 'haircut', now)).some((slot) => slot.time === input.time));
   const next = await payments.start({ ...input, requestId: randomUUID() }, now);
   assert.equal((await payments.cancel(next.id)).status, 'expired');
@@ -132,4 +132,53 @@ test('refunds arriving before checkout completion reconcile first, and unrelated
   const unrelated = provider.event('charge.refunded', { id: 'ch_unrelated' });
   await payments.webhook(unrelated.raw, unrelated.signature);
   assert.equal((await db.prepare('SELECT count(*) AS n FROM stripe_events').get()).n, 2);
+});
+
+test('availability recovers missed expiry webhooks for the requested date and keeps paid slots reserved', async (t) => {
+  const { db, payments, provider, input, now } = await fixture(t);
+  const expired = await payments.start(input, now);
+  const paid = await payments.start({ ...input, requestId: randomUUID(), time: '10:00' }, now);
+  [...provider.sessions.values()].find((session) => session.client_reference_id === expired.id).status = 'expired';
+  provider.payBooking(paid.id);
+  const result = await payments.refreshAvailability(input.date, now + 32 * 60_000);
+  assert.deepEqual(result, { checked: 2, failed: 0 });
+  const slots = await availableSlots(db, input.date, 'haircut', now);
+  assert(slots.some((slot) => slot.time === '09:00'));
+  assert(!slots.some((slot) => slot.time === '10:00'));
+  assert.equal((await db.prepare('SELECT status FROM bookings WHERE id = ?').get(paid.id)).status, 'confirmed');
+});
+
+test('booking a stale displayed slot rechecks overdue holds before creating a new reservation', async (t) => {
+  const { db, payments, provider, input, now } = await fixture(t);
+  const old = await payments.start(input, now);
+  [...provider.sessions.values()][0].status = 'expired';
+  const next = await payments.start({ ...input, requestId: randomUUID() }, now + 32 * 60_000);
+  assert.notEqual(next.id, old.id);
+  assert.equal((await db.prepare('SELECT status FROM bookings WHERE id = ?').get(old.id)).status, 'expired');
+  assert.equal((await db.prepare("SELECT count(*) AS n FROM bookings WHERE status = 'pending'").get()).n, 1);
+});
+
+test('concurrent availability reads share a short retry lease and provider outages keep holds reserved', async (t) => {
+  const { db, payments, provider, input, now } = await fixture(t);
+  await payments.start(input, now);
+  let calls = 0;
+  provider.stripe.checkout.sessions.retrieve = async (id, params, options) => {
+    calls++;
+    assert.equal(options.timeout, 4000);
+    assert.equal(options.maxNetworkRetries, 0);
+    throw new Error('Temporary provider outage');
+  };
+  const reads = await Promise.all(Array.from({ length: 8 }, () => payments.refreshAvailability(input.date, now + 32 * 60_000)));
+  assert.equal(calls, 1);
+  assert.equal(reads.reduce((sum, result) => sum + result.failed, 0), 1);
+  assert(!(await availableSlots(db, input.date, 'haircut', now)).some((slot) => slot.time === input.time));
+});
+
+test('daily cleanup processes a bounded batch and leaves remaining reservations for later checks', async (t) => {
+  const { db, payments, provider, input, now } = await fixture(t);
+  for (let hour = 9; hour < 18; hour++) await payments.start({ ...input, requestId: randomUUID(), time: `${String(hour).padStart(2, '0')}:00` }, now);
+  for (const session of provider.sessions.values()) session.status = 'expired';
+  assert.equal((await payments.sweep(now + 32 * 60_000)).checked, 8);
+  assert.equal((await db.prepare("SELECT count(*) AS n FROM bookings WHERE status = 'pending'").get()).n, 1);
+  assert.equal((await payments.sweep(now + 32 * 60_000)).checked, 1);
 });
