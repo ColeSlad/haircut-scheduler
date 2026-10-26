@@ -10,6 +10,7 @@ test('notification diagnostics distinguish HTTP rejections, usable codes, and mi
   }
   assert.deepEqual(notificationDiagnostic({ state: 'failed', error_code: 'HTTP_400' }), { label: 'Twilio request failed (HTTP 400)', url: '', help: true });
   assert.deepEqual(notificationDiagnostic({ state: 'failed', error_code: '21608' }), { label: 'Provider error 21608', url: 'https://www.twilio.com/docs/api/errors/21608', help: false });
+  assert.match(notificationDiagnostic({ state: 'failed', error_code: '30034' }).hint, /approved US A2P 10DLC/);
   assert.equal(notificationDiagnostic({ state: 'unknown', error_code: null }).label, '');
   assert.equal(notificationDiagnostic({ state: 'delivered', error_code: '21608' }).label, '');
 });
