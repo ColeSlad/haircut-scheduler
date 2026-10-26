@@ -6,10 +6,12 @@ import { tiktokVideoUrl } from './videos.js';
 import { rateLimit } from './limits.js';
 import { createPayments } from './payments.js';
 import { createStorage } from './storage.js';
+import { createNotifications } from './notifications.js';
 
 const categories = ['Short cuts', 'Texture', 'Beards', 'Long cuts'];
-export function createApi(db, { origin, secure, provider, secret, storage = createStorage(db, { callbackOrigin: origin }) }) {
-  const payments = createPayments(db, { origin, provider, secret });
+export function createApi(db, { origin, secure, provider, secret, notificationSender, storage = createStorage(db, { callbackOrigin: origin }) }) {
+  const notifications = createNotifications(db, { origin, sender: notificationSender });
+  const payments = createPayments(db, { origin, provider, secret, notifications });
   const authKeys = async () => (await passwordAuthKeys(db));
   return async function api(req, res, url) {
     const path = url.pathname;
@@ -20,6 +22,18 @@ export function createApi(db, { origin, secure, provider, secret, storage = crea
     };
     if (path === '/api/stripe/webhook' && method === 'POST') {
       await payments.webhook(await readRaw(req), req.headers['stripe-signature']);
+      await notifications.deliver();
+      return json({ received: true });
+    }
+    if (path === '/api/sms/status' && method === 'POST') {
+      if (!(req.headers['content-type'] || '').startsWith('application/x-www-form-urlencoded')) throw new HttpError(415, 'Send a form callback.');
+      const values = new URLSearchParams((await readRaw(req)).toString());
+      const params = Object.create(null);
+      for (const [key, value] of values) {
+        if (Object.hasOwn(params, key)) throw new HttpError(400, 'Duplicate callback parameter.');
+        params[key] = value;
+      }
+      await notifications.callback(new URL(req.url, origin).href, params, req.headers['x-twilio-signature']);
       return json({ received: true });
     }
     if (path === '/api/admin/upload' && method === 'POST' && req.headers['x-vercel-signature']) {
@@ -29,7 +43,9 @@ export function createApi(db, { origin, secure, provider, secret, storage = crea
     }
     if (path === '/api/cron/payments' && method === 'GET') {
       if (!process.env.CRON_SECRET || tokenHash(req.headers.authorization || '') !== tokenHash(`Bearer ${process.env.CRON_SECRET}`)) throw new HttpError(401, 'Unauthorized.');
-      return json(await payments.sweep());
+      const result = await payments.sweep();
+      await notifications.deliver({ limit: 3 });
+      return json(result);
     }
     if (/^\/api\/checkout\/return\/[a-f0-9-]{36}$/.test(path) && method === 'GET') {
       const id = path.split('/').at(-1);
@@ -37,6 +53,7 @@ export function createApi(db, { origin, secure, provider, secret, storage = crea
       const booking = await db.prepare('SELECT * FROM bookings WHERE id = ? AND token_hash = ?').get(id, tokenHash(token));
       if (!booking) { res.writeHead(303, { Location: '/booking', 'Cache-Control': 'no-store' }); return res.end(); }
       try { await payments.reconcile(id); } catch { /* Private page will show a pending state and retry verification. */ }
+      await notifications.deliver();
       res.writeHead(303, { Location: `/booking#${token}`, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
       return res.end();
     }
@@ -59,6 +76,7 @@ export function createApi(db, { origin, secure, provider, secret, storage = crea
       const input = await readJson(req);
       if (input.website) throw new HttpError(400, 'Unable to book this appointment.');
       const checkout = await payments.start(input);
+      await notifications.deliver();
       if (checkout.bookingUrl) return json({ id: checkout.id, bookingUrl: checkout.bookingUrl }, 201);
       return json({ id: checkout.id, checkoutUrl: checkout.checkoutUrl }, 201, {
         'Set-Cookie': `checkout_${checkout.id}=${checkout.token}; HttpOnly; SameSite=Lax; Path=/api/checkout/return/${checkout.id}; Max-Age=86400${secure ? '; Secure' : ''}`,
@@ -77,6 +95,7 @@ export function createApi(db, { origin, secure, provider, secret, storage = crea
       } else if (booking.status === 'pending') {
         try { booking = await payments.reconcile(booking.id); } catch { /* Never report confirmation without provider verification. */ }
       }
+      await notifications.deliver();
       return json({ id: booking.id, serviceName: booking.service_name, price: booking.price, duration: booking.duration, date: booking.date, time: booking.time, startsAt: booking.starts_at, endsAt: booking.ends_at, status: booking.status, paymentStatus: booking.payment_status, paymentMethod: booking.payment_method, amountRefunded: booking.amount_refunded, checkoutUrl: booking.status === 'pending' ? booking.checkout_url : null, name: booking.name, timezone: (await settings(db)).timezone });
     }
     if (path === '/api/admin/session' && method === 'GET') {
@@ -103,8 +122,26 @@ export function createApi(db, { origin, secure, provider, secret, storage = crea
         (await db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(session));
         return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie('', secure) });
       }
+      if (path === '/api/admin/notifications' && method === 'GET') return json(await notifications.adminData());
+      if (path === '/api/admin/notifications' && method === 'PUT') {
+        await notifications.save(await readJson(req));
+        return json({ ok: true });
+      }
+      if (path === '/api/admin/notifications/test' && method === 'POST') {
+        await rateLimit(db, req, 'notification-test', 5, 60 * 60_000);
+        const id = await notifications.queueTest();
+        await notifications.deliver({ id });
+        return json({ ok: true });
+      }
+      if (/^\/api\/admin\/notifications\/[a-f\d-]{36}\/retry$/.test(path) && method === 'POST') {
+        await rateLimit(db, req, 'notification-retry', 10, 60 * 60_000);
+        const id = path.split('/').at(-2);
+        await notifications.retry(id);
+        await notifications.deliver({ id });
+        return json({ ok: true });
+      }
       if (path === '/api/admin/data' && method === 'GET') {
-        return json({ ...(await publicData(db)), services: (await db.prepare("SELECT * FROM services WHERE id = 'haircut'").all()), bookings: (await db.prepare(`SELECT id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, status, created_at, payment_status, payment_method, payment_intent_id, amount_refunded, CASE WHEN checkout_session_id LIKE 'cs_test_%' THEN 'test' ELSE 'live' END AS payment_mode FROM bookings ORDER BY starts_at DESC`).all()), daysOff: (await db.prepare('SELECT * FROM days_off ORDER BY date').all()) });
+        return json({ ...(await publicData(db)), services: (await db.prepare("SELECT * FROM services WHERE id = 'haircut'").all()), bookings: (await db.prepare(`SELECT id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, status, created_at, payment_status, payment_method, payment_intent_id, amount_refunded, CASE WHEN checkout_session_id LIKE 'cs_test_%' THEN 'test' ELSE 'live' END AS payment_mode FROM bookings ORDER BY starts_at DESC`).all()), daysOff: (await db.prepare('SELECT * FROM days_off ORDER BY date').all()), notifications: await notifications.adminData() });
       }
       if (path === '/api/admin/settings' && method === 'PUT') {
         const input = await readJson(req);
@@ -209,7 +246,7 @@ export function createApi(db, { origin, secure, provider, secret, storage = crea
         if (!['confirmed', 'pending'].includes(booking.status)) throw new HttpError(400, 'This appointment has already been updated.');
         if (booking.status === 'pending' && status !== 'cancelled') throw new HttpError(400, 'Payment has not been confirmed.');
         if (status !== 'cancelled' && booking.ends_at > Date.now()) throw new HttpError(400, 'Complete the appointment after its scheduled end time.');
-        if (status === 'cancelled') await payments.cancel(booking.id);
+        if (status === 'cancelled') { await payments.cancel(booking.id); await notifications.deliver(); }
         else await db.prepare("UPDATE bookings SET status = ? WHERE id = ? AND status = 'confirmed'").run(status, booking.id);
         return json({ ok: true });
       }

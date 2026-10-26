@@ -13,11 +13,11 @@ import { hashPassword, verifyPassword, createOrResetAdmin, createSession } from 
 import { availableSlots, createBooking, localParts } from '../server/scheduling.js';
 const origin = 'http://localhost:3000';
 
-async function fixture(t) {
+async function fixture(t, { notificationSender } = {}) {
   const db = await testDatabase(t);
   const dataDir = mkdtempSync(join(tmpdir(), 'haircut-test-'));
   const provider = fakeProvider();
-  const server = appServer({ db, origin, dataDir, provider });
+  const server = appServer({ db, origin, dataDir, provider, notificationSender });
   const password = ' secure-test-password ';
   (await db.prepare('INSERT INTO admin VALUES (1, ?, ?)').run('admin@example.com', await hashPassword(password)));
   t.after(() => { rmSync(dataDir, { recursive: true, force: true }); });
@@ -75,6 +75,62 @@ test('private admin endpoints and mutations require authentication', async (t) =
   assert.equal((await request('/api/admin/settings', { method: 'PUT', body: {} })).status, 401);
   assert.equal((await request('/api/admin/videos', { method: 'PUT', body: { videos: [] } })).status, 401);
   assert.equal((await request('/api/admin/reviews', { method: 'PUT', body: { rating: 5, items: [] } })).status, 401);
+});
+
+test('barber texts are private, admin-controlled, and sent once for booking confirmation and cancellation', async (t) => {
+  const sent = [];
+  const notificationSender = { configured: () => true, validate: () => false, async send(message) { sent.push(message); return { sid: `SM${String(sent.length).padStart(32, '0')}`, status: 'queued' }; } };
+  const { request, login, db } = await fixture(t, { notificationSender });
+  for (const [path, method] of [['/api/admin/notifications', 'GET'], ['/api/admin/notifications', 'PUT'], ['/api/admin/notifications/test', 'POST']]) assert.equal((await request(path, { method, ...(method === 'GET' ? {} : { body: {} }) })).status, 401);
+  const cookie = await login();
+  const headers = { cookie };
+  assert.equal((await request('/api/admin/notifications', { method: 'PUT', headers, body: { phone: '+15559990000', enabled: true } })).status, 200);
+  assert(!JSON.stringify((await request('/api/public')).body).includes('+15559990000'));
+  const input = { ...(await futureSlot(db)), requestId: randomUUID(), paymentMethod: 'in_person' };
+  const booked = await request('/api/bookings', { method: 'POST', body: input });
+  assert.equal(booked.status, 201);
+  assert.equal((await request('/api/bookings', { method: 'POST', body: input })).status, 201);
+  assert.equal(sent.length, 1); assert.match(sent[0].body, /New booking/); assert.match(sent[0].body, /Due in person/);
+  const token = booked.body.bookingUrl.split('#')[1];
+  assert(!sent[0].body.includes(token));
+  const cancellation = { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: { action: 'cancel' } };
+  assert.equal((await request('/api/booking', cancellation)).status, 200);
+  assert.equal((await request('/api/booking', cancellation)).status, 200);
+  assert.equal(sent.length, 2); assert.match(sent[1].body, /Booking cancelled/);
+  const admin = await request('/api/admin/data', { headers });
+  assert.equal(admin.body.notifications.phone, '+15559990000');
+  assert.equal(admin.body.notifications.recent.length, 2);
+});
+
+test('paid online confirmation texts wait for verified payment and repeated webhooks do not resend', async (t) => {
+  const sent = [];
+  const notificationSender = { configured: () => true, validate: () => false, async send(message) { sent.push(message); return { sid: `SM${String(sent.length).padStart(32, '0')}`, status: 'queued' }; } };
+  const { request, login, db, provider } = await fixture(t, { notificationSender });
+  const headers = { cookie: await login() };
+  await request('/api/admin/notifications', { method: 'PUT', headers, body: { phone: '+15559990000', enabled: true } });
+  const booked = await request('/api/bookings', { method: 'POST', body: await futureSlot(db) });
+  assert.equal(booked.status, 201); assert.equal(sent.length, 0);
+  const session = provider.payBooking(booked.body.id);
+  const event = provider.event('checkout.session.completed', { id: session.id });
+  const webhook = { method: 'POST', headers: { 'stripe-signature': event.signature }, body: event.raw.toString() };
+  assert.equal((await request('/api/stripe/webhook', webhook)).status, 200);
+  assert.equal((await request('/api/stripe/webhook', webhook)).status, 200);
+  assert.equal(sent.length, 1); assert.match(sent[0].body, /Paid online/);
+  assert.equal((await request(`/api/admin/bookings/${booked.body.id}`, { method: 'PATCH', headers, body: { status: 'cancelled' } })).status, 200);
+  assert.equal(sent.length, 2); assert.match(sent[1].body, /Booking cancelled/);
+});
+
+test('failed SMS delivery never turns a confirmed in-person booking into an error', async (t) => {
+  const notificationSender = { configured: () => true, validate: () => false, async send() { const error = new Error('Rejected'); error.status = 400; error.code = 21610; throw error; } };
+  const { request, login, db } = await fixture(t, { notificationSender });
+  const headers = { cookie: await login() };
+  await request('/api/admin/notifications', { method: 'PUT', headers, body: { phone: '+15559990000', enabled: true } });
+  const result = await request('/api/bookings', { method: 'POST', body: { ...(await futureSlot(db)), paymentMethod: 'in_person' } });
+  assert.equal(result.status, 201);
+  assert.equal((await db.prepare('SELECT status FROM bookings').get()).status, 'confirmed');
+  const admin = await request('/api/admin/notifications', { headers });
+  assert.equal(admin.body.recent[0].state, 'failed');
+  assert.equal(admin.body.recent[0].error_code, '21610');
 });
 
 test('only admins can record in-person payments, without changing online payment records', async (t) => {

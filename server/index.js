@@ -10,8 +10,8 @@ import { securityHeaders } from './config.js';
 const buildDir = fileURLToPath(new URL('../dist', import.meta.url));
 const publicDir = existsSync(buildDir) ? buildDir : fileURLToPath(new URL('../public', import.meta.url));
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8' };
-export function appServer({ db = openStore(), origin = 'http://localhost:3000', dataDir = resolve(process.env.DATA_DIR || 'data'), provider, secret, storage } = {}) {
-  const api = createApi(db, { origin, secure: origin.startsWith('https://'), dataDir, provider, secret, storage });
+export function appServer({ db = openStore(), origin = 'http://localhost:3000', dataDir = resolve(process.env.DATA_DIR || 'data'), provider, secret, notificationSender, storage } = {}) {
+  const api = createApi(db, { origin, secure: origin.startsWith('https://'), dataDir, provider, secret, notificationSender, storage });
   return createServer(async (req, res) => {
     for (const [key, value] of Object.entries(securityHeaders)) res.setHeader(key, value);
     try {

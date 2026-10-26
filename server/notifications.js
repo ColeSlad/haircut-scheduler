@@ -48,6 +48,7 @@ export function createNotifications(db, { origin, sender = twilioSender() } = {}
   async function enqueue(tx, booking, kind, now = Date.now()) {
     const recipient = await tx.prepare('SELECT phone, enabled FROM barber_notification_settings WHERE id = 1').get();
     if (!recipient.enabled || !recipient.phone) return;
+    if (kind === 'cancelled') await tx.prepare("UPDATE sms_notifications SET state = 'cancelled', updated_at = ? WHERE booking_id = ? AND kind = 'confirmed' AND state = 'queued'").run(now, booking.id);
     const id = randomUUID();
     const body = notificationBody(booking, await settings(tx), kind, origin);
     await tx.prepare(`INSERT INTO sms_notifications (id, booking_id, kind, phone, body, attempt_id, created_at, updated_at)
@@ -80,7 +81,7 @@ export function createNotifications(db, { origin, sender = twilioSender() } = {}
       WHERE id = ? AND state = 'failed' AND phone = (SELECT phone FROM barber_notification_settings WHERE id = 1)`).run(randomUUID(), Date.now(), id);
     if (!changed.changes) throw new HttpError(400, 'Only a failed text to the current notification number can be retried.');
   }
-  async function flush(limit = 1) {
+  async function flush(limit = 1, id) {
     // Never retry an ambiguous provider timeout or a process interruption: the
     // original message might already have been sent. Signed callbacks can resolve it.
     const now = Date.now();
@@ -88,10 +89,10 @@ export function createNotifications(db, { origin, sender = twilioSender() } = {}
     if (!sender.configured()) return;
     const jobs = await db.prepare(`WITH pending AS (
       SELECT n.id FROM sms_notifications n JOIN barber_notification_settings s ON s.id = 1
-      WHERE n.state = 'queued' AND n.phone = s.phone AND (s.enabled = 1 OR n.kind = 'test')
+      WHERE n.state = 'queued' AND n.phone = s.phone AND (s.enabled = 1 OR n.kind = 'test') ${id ? 'AND n.id = ?' : ''}
       ORDER BY n.created_at LIMIT ? FOR UPDATE OF n SKIP LOCKED
     ) UPDATE sms_notifications n SET state = 'sending', attempts = attempts + 1, attempted_at = ?, updated_at = ?
-      FROM pending WHERE n.id = pending.id RETURNING n.*`).all(limit, now, now);
+      FROM pending WHERE n.id = pending.id RETURNING n.*`).all(...[...(id ? [id] : []), limit, now, now]);
     for (const job of jobs) {
       try {
         const result = await sender.send({ phone: job.phone, body: job.body, statusCallback: callbackUrl(origin, `/api/sms/status?attempt=${job.attempt_id}`) });
@@ -106,8 +107,8 @@ export function createNotifications(db, { origin, sender = twilioSender() } = {}
       }
     }
   }
-  async function deliver() {
-    try { await flush(); } catch { console.error('barber_notification_dispatch_failed'); }
+  async function deliver({ id, limit = 1 } = {}) {
+    try { await flush(limit, id); } catch { console.error('barber_notification_dispatch_failed'); }
   }
   async function callback(url, params, signature) {
     if (!sender.validate(signature, url, params)) throw new HttpError(403, 'Invalid SMS callback signature.');

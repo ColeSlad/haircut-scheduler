@@ -79,6 +79,16 @@ test('notification settings disable delivery and changing the recipient cancels 
   assert.equal((await db.prepare('SELECT count(*) AS n FROM sms_notifications').get()).n, 1);
 });
 
+test('a cancellation supersedes a confirmation that has not been dispatched yet', async (t) => {
+  const { db, notifications, sent, row } = await fixture(t);
+  await notifications.enqueue(db, row, 'confirmed');
+  await notifications.enqueue(db, row, 'cancelled');
+  await notifications.flush(3);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].body, /Booking cancelled/);
+  assert.equal((await db.prepare("SELECT state FROM sms_notifications WHERE kind = 'confirmed'").get()).state, 'cancelled');
+});
+
 test('definite send failures can be retried while ambiguous timeouts are never automatically resent', async (t) => {
   const { db, notifications, sender, row, sent } = await fixture(t);
   await notifications.enqueue(db, row, 'confirmed');

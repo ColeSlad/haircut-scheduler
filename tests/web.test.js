@@ -6,6 +6,8 @@ import { fakeProvider } from './fake-stripe.js';
 import { createWebHandler } from '../server/web.js';
 import { runtimeConfig } from '../server/config.js';
 import { localParts } from '../server/scheduling.js';
+import twilio from 'twilio';
+import { twilioSender } from '../server/notifications.js';
 
 test('public deployment startup requires core configuration, independently of optional integrations', () => {
   assert.throws(() => runtimeConfig({}), { status: 503 });
@@ -108,4 +110,26 @@ test('daily payment cleanup requires the cron secret', async (t) => {
     if (previous === undefined) delete process.env.CRON_SECRET;
     else process.env.CRON_SECRET = previous;
   }
+});
+
+test('SMS delivery callbacks accept provider form data only with a valid SDK signature', async (t) => {
+  const db = await testDatabase(t);
+  const origin = 'https://www.l2cuts.com';
+  const phone = '+15559990000';
+  const env = { TWILIO_ACCOUNT_SID: `AC${'1'.repeat(32)}`, TWILIO_AUTH_TOKEN: '2'.repeat(32), TWILIO_FROM_NUMBER: '+15558880000' };
+  const notificationSender = twilioSender(env, () => ({ messages: { create: async () => ({ sid: `SM${'a'.repeat(32)}`, status: 'queued' }) } }));
+  await db.prepare('UPDATE barber_notification_settings SET phone = ?, enabled = 1').run(phone);
+  const handler = createWebHandler(db, { origin, notificationSender, secret: 'isolated-sms-callback-secret-at-least-32' });
+  const day = new Date(); do { day.setUTCDate(day.getUTCDate() + 1); } while (day.getUTCDay() !== 2);
+  const input = { requestId: randomUUID(), paymentMethod: 'in_person', firstName: 'Test', lastName: 'Client', phone: '555-123-4567', date: day.toISOString().slice(0, 10), time: '09:00' };
+  const booked = await handler(new Request(`${origin}/api/bookings`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify(input) }));
+  assert.equal(booked.status, 201);
+  const job = await db.prepare('SELECT * FROM sms_notifications').get();
+  const url = `${origin}/api/sms/status?attempt=${job.attempt_id}`;
+  const params = { AccountSid: env.TWILIO_ACCOUNT_SID, To: phone, MessageSid: job.provider_sid, MessageStatus: 'delivered', AdditionalField: 'preserved' };
+  const signature = twilio.getExpectedTwilioSignature(env.TWILIO_AUTH_TOKEN, url, params);
+  const send = (signature) => handler(new Request(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Twilio-Signature': signature }, body: new URLSearchParams(params).toString() }));
+  assert.equal((await send('forged')).status, 403);
+  assert.equal((await send(signature)).status, 200);
+  assert.equal((await db.prepare('SELECT state FROM sms_notifications').get()).state, 'delivered');
 });

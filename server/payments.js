@@ -1,6 +1,7 @@
 import Stripe from 'stripe';
 import { createHmac, randomUUID } from 'node:crypto';
 import { createBooking, HttpError, tokenHash, validDate } from './scheduling.js';
+import { createNotifications } from './notifications.js';
 
 export function paymentProvider(env = process.env) {
   const key = env.STRIPE_SECRET_KEY;
@@ -15,7 +16,7 @@ export function paymentProvider(env = process.env) {
 const objectId = (value) => typeof value === 'string' ? value : value?.id;
 const unavailable = () => new HttpError(503, 'Payment could not be checked. Please try again; your time is still reserved.');
 
-export function createPayments(db, { origin, provider = paymentProvider, secret = process.env.APP_SECRET } = {}) {
+export function createPayments(db, { origin, provider = paymentProvider, secret = process.env.APP_SECRET, notifications = createNotifications(db, { origin }) } = {}) {
   const get = typeof provider === 'function' ? provider : () => provider;
   const bookingById = (id) => db.prepare('SELECT * FROM bookings WHERE id = ?').get(id);
   const managementToken = (id) => {
@@ -68,7 +69,9 @@ export function createPayments(db, { origin, provider = paymentProvider, secret 
       if (method === 'in_person') {
         await tx.prepare(`UPDATE bookings SET status = 'confirmed', payment_status = 'unpaid', payment_method = 'in_person',
           request_hash = ?, request_fingerprint = ? WHERE id = ?`).run(requestHash, fingerprint, id);
-        return tx.prepare('SELECT * FROM bookings WHERE id = ?').get(id);
+        const confirmed = await tx.prepare('SELECT * FROM bookings WHERE id = ?').get(id);
+        await notifications.enqueue(tx, confirmed, 'confirmed');
+        return confirmed;
       }
       if (created.price < 50 || created.price > 100000) throw new HttpError(400, 'Online booking is unavailable at this price. Please contact the barber.');
       const expiresAt = Math.floor(now / 1000) + 31 * 60;
@@ -110,7 +113,9 @@ export function createPayments(db, { origin, provider = paymentProvider, secret 
       } else if (session.status === 'expired' && booking.status === 'pending') {
         await tx.prepare("UPDATE bookings SET status = 'expired' WHERE id = ?").run(id);
       }
-      return tx.prepare('SELECT * FROM bookings WHERE id = ?').get(id);
+      const updated = await tx.prepare('SELECT * FROM bookings WHERE id = ?').get(id);
+      if (booking.status === 'pending' && updated.status === 'confirmed') await notifications.enqueue(tx, updated, 'confirmed');
+      return updated;
     });
   }
 
@@ -129,8 +134,11 @@ export function createPayments(db, { origin, provider = paymentProvider, secret 
       if (booking.status === 'pending') throw unavailable();
     }
     // Paid cancellations deliberately do not call Stripe's refund API.
-    await db.prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ? AND status = 'confirmed'").run(id);
-    return bookingById(id);
+    return db.transaction(async (tx) => {
+      const cancelled = await tx.prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ? AND status = 'confirmed' RETURNING *").get(id);
+      if (cancelled) await notifications.enqueue(tx, cancelled, 'cancelled');
+      return cancelled || tx.prepare('SELECT * FROM bookings WHERE id = ?').get(id);
+    });
   }
 
   async function webhook(raw, signature) {
