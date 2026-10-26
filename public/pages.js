@@ -1,4 +1,5 @@
 import { esc, money } from './shared.js';
+import { reviewCard } from './reviews.js';
 
 const photos = [
   'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?auto=format&fit=crop&w=800&q=85',
@@ -17,7 +18,7 @@ function localVideoPlayers(videos = []) {
 
 function homeReviews(reviews) {
   if (!reviews?.items.length) return '';
-  return `<aside class="home-reviews" aria-labelledby="reviews-heading"><div class="review-heading"><h2 id="reviews-heading">Reviews</h2><p class="review-score" aria-label="${reviews.rating} out of 5 stars">${reviews.rating.toFixed(2)}/5</p></div><div class="review-list">${reviews.items.map((review) => `<figure class="review-item"><div class="review-stars" role="img" aria-label="${review.stars} out of 5 stars"><span aria-hidden="true">${'★'.repeat(review.stars)}${'☆'.repeat(5 - review.stars)}</span></div><blockquote><p>${esc(review.text)}</p></blockquote><figcaption>${esc(review.name)}${review.sample ? '<span class="review-placeholder">Placeholder</span>' : ''}</figcaption></figure>`).join('')}</div></aside>`;
+  return `<aside class="home-reviews" aria-labelledby="reviews-heading"><div class="review-heading"><h2 id="reviews-heading">Reviews</h2>${reviews.rating !== null ? `<p class="review-score" aria-label="${reviews.rating} out of 5 stars">${reviews.rating.toFixed(2)}/5</p>` : ''}</div><div class="review-list">${reviews.items.slice(0, 3).map(review => reviewCard(review)).join('')}</div><a class="text-link" href="/reviews">All reviews</a></aside>`;
 }
 
 export function home(data) {

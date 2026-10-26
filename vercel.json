@@ -11,6 +11,7 @@
     { "source": "/api/:path*", "destination": "/api" },
     { "source": "/schedule", "destination": "/index.html" },
     { "source": "/gallery", "destination": "/index.html" },
+    { "source": "/reviews", "destination": "/index.html" },
     { "source": "/booking", "destination": "/index.html" },
     { "source": "/admin", "destination": "/index.html" }
   ],

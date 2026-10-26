@@ -2,6 +2,7 @@ import { $, esc, imageEvents, api } from './shared.js';
 import { home, galleryPage } from './pages.js';
 import { mountScheduler, mountConfirmation } from './booking.js';
 import { mountAdmin } from './admin.js';
+import { mountReviews } from './reviews.js';
 let data;
 let routeId = 0;
 const app = $('#app');
@@ -13,6 +14,7 @@ function header(path) {
       <a href="/" ${path === '/' ? 'aria-current="page"' : ''}>Home</a>
       <a href="/schedule" ${path === '/schedule' ? 'aria-current="page"' : ''}>Book a cut</a>
       <a href="/gallery" ${path === '/gallery' ? 'aria-current="page"' : ''}>Gallery</a>
+      <a href="/reviews" ${path === '/reviews' ? 'aria-current="page"' : ''}>Reviews</a>
     </nav>
   </header>`;
 }
@@ -30,13 +32,14 @@ async function render() {
     if (!data) await refreshData();
     if (id !== routeId) return;
     const path = location.pathname;
-    document.title = `${({ '/': data.settings.tagline, '/schedule': 'Book a haircut', '/gallery': 'Gallery', '/admin': 'Admin', '/booking': 'Appointment' })[path] || 'Welcome'} — ${data.settings.name}`;
+    document.title = `${({ '/': data.settings.tagline, '/schedule': 'Book a haircut', '/gallery': 'Gallery', '/reviews': 'Reviews', '/admin': 'Admin', '/booking': 'Appointment' })[path] || 'Welcome'} — ${data.settings.name}`;
     let robots = $('meta[name="robots"]');
     if (!robots) { robots = document.createElement('meta'); robots.name = 'robots'; document.head.append(robots); }
     robots.content = ['/admin', '/booking'].includes(path) ? 'noindex, nofollow' : 'index, follow';
     app.innerHTML = `${header(path)}<main id="main" tabindex="-1">${path === '/' ? home(data) : path === '/gallery' ? galleryPage(data) : ''}</main>${footer()}`;
     if (path === '/schedule') mountScheduler(data, navigate);
     if (path === '/booking') await mountConfirmation(data, navigate);
+    if (path === '/reviews') await mountReviews(data, { refreshData });
     if (path === '/admin') await mountAdmin(data, { navigate, refreshData });
     imageEvents();
   } catch (error) {
@@ -48,7 +51,7 @@ document.addEventListener('click', (event) => {
   const link = event.target.closest('a');
   if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || link.target || link.download) return;
   const url = new URL(link.href);
-  if (url.origin !== location.origin || !['/', '/schedule', '/gallery', '/admin', '/booking'].includes(url.pathname)) return;
+  if (url.origin !== location.origin || !['/', '/schedule', '/gallery', '/reviews', '/admin', '/booking'].includes(url.pathname)) return;
   if (url.hash && url.pathname !== '/booking') return;
   event.preventDefault(); navigate(url.pathname + url.search + url.hash);
 });
