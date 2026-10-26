@@ -29,7 +29,6 @@ export function home(data) {
       <p>${esc(s.description)}</p>
       ${haircut ? `<p class="home-price">${haircut.duration} min · ${money(haircut.price)}</p>` : ''}
       <div class="page-actions"><a class="button primary" href="/schedule">Book a cut</a><a class="text-link" href="/gallery">Gallery</a></div>
-      ${haircut && data.bookingEnabled !== false ? '<p class="fine-print">Pay online to confirm.</p>' : ''}
     </div>
     ${homeReviews(data.reviews)}
   </section>${data.homeVideos?.length ? `<section class="section-shell home-videos local-video-grid" aria-label="Haircut videos">${localVideoPlayers(data.homeVideos)}</section>` : ''}`;
