@@ -116,7 +116,7 @@ export function createApi(db, { origin, secure, provider, storage = createStorag
         if (config.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.email)) throw new HttpError(400, 'Enter a valid contact email.');
         if (config.phone && !/^[+\d\s().-]{7,40}$/.test(config.phone)) throw new HttpError(400, 'Enter a valid studio phone number.');
         if (config.instagram && !/^https:\/\/(www\.)?instagram\.com\/[A-Za-z0-9_.]+\/?$/.test(config.instagram)) throw new HttpError(400, 'Use a full Instagram profile URL.');
-        for (const [key, min, max] of [['leadMinutes', 0, 10080], ['bookingDays', 1, 180]]) {
+        for (const [key, min, max] of [['leadMinutes', 32, 10080], ['bookingDays', 1, 180]]) {
           if (!Number.isInteger(input[key]) || input[key] < min || input[key] > max) throw new HttpError(400, `Invalid ${key}.`);
           config[key] = input[key];
         }

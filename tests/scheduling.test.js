@@ -29,6 +29,13 @@ test('minimum notice is measured against studio time', async (t) => {
   const slots = (await availableSlots(db, input.date, 'haircut', Date.parse('2026-10-27T13:10:00Z')));
   assert.equal(slots[0].time, '10:15');
 });
+test('checkout expiry precedes the appointment even when legacy minimum notice is zero', async (t) => {
+  const db = await fixture(t);
+  const config = { ...(await settings(db)), leadMinutes: 0 };
+  await db.prepare('UPDATE settings SET value = ? WHERE id = 1').run(JSON.stringify(config));
+  const slots = await availableSlots(db, input.date, 'haircut', Date.parse('2026-10-27T13:10:00Z'));
+  assert.equal(slots[0].time, '09:45');
+});
 test('bookings persist service snapshots and hash their private tokens', async (t) => {
   const db = await fixture(t);
   const booking = (await createBooking(db, input, now));

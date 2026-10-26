@@ -49,7 +49,9 @@ export async function availableSlots(db, date, serviceId = 'haircut', now = Date
   for (let start = minutes(hours.start); start + service.duration <= minutes(hours.end); start += 15) {
     const time = clock(start);
     const startsAt = toTimestamp(date, time, config.timezone);
-    if (startsAt === null || startsAt < now + config.leadMinutes * 60_000) continue;
+    // Stripe requires at least a 30-minute Checkout session. Leave a small margin
+    // so a payable session always expires before the appointment starts.
+    if (startsAt === null || startsAt < now + Math.max(32, config.leadMinutes) * 60_000) continue;
     const endsAt = startsAt + service.duration * 60_000;
     if (bookings.some((booking) => startsAt < booking.ends_at && endsAt > booking.starts_at)) continue;
     result.push({ time, startsAt, endsAt });
