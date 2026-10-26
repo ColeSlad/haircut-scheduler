@@ -20,19 +20,45 @@ test('public deployment startup requires core configuration, independently of op
   assert.throws(() => runtimeConfig({ ...core, DATABASE_URL: '' }), (error) => error.configurationKeys.includes('DATABASE_URL'));
 });
 
-test('public pages remain available while payments are unconfigured, without accepting unpaid bookings', async (t) => {
+test('booking stays available without Stripe, while online payments fail without creating a reservation', async (t) => {
   const db = await testDatabase(t);
   const origin = 'https://l2cuts.vercel.app';
   const handler = createWebHandler(db, { origin, provider: () => { const error = new Error('Payments unavailable'); error.status = 503; throw error; } });
   const response = await handler(new Request(`${origin}/api/public`));
   assert.equal(response.status, 200);
   const data = await response.json();
-  assert.equal(data.bookingEnabled, false);
+  assert.equal(data.bookingEnabled, true);
+  assert.equal(data.onlinePaymentEnabled, false);
   assert.equal(data.services[0].name, 'Haircut');
   assert.equal((await handler(new Request(`${origin}/api/admin/session`))).status, 200);
   const checkout = await handler(new Request(`${origin}/api/bookings`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: '{}' }));
   assert.equal(checkout.status, 503);
   assert.equal((await db.prepare('SELECT count(*) AS n FROM bookings').get()).n, 0);
+});
+
+test('an in-person appointment can be privately viewed and cancelled without payment configuration', async (t) => {
+  const db = await testDatabase(t);
+  const origin = 'https://www.l2cuts.com';
+  const handler = createWebHandler(db, { origin, secret: 'isolated-web-booking-secret-at-least-32-characters', provider: () => { throw new Error('Stripe must not be called'); } });
+  const day = new Date();
+  do { day.setUTCDate(day.getUTCDate() + 1); } while (day.getUTCDay() !== 2);
+  const input = { paymentMethod: 'in_person', requestId: randomUUID(), date: day.toISOString().slice(0, 10), time: '09:00', firstName: 'Test', lastName: 'Customer', phone: '555-123-4567' };
+  const response = await handler(new Request(`${origin}/api/bookings`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify(input) }));
+  assert.equal(response.status, 201);
+  const result = await response.json();
+  assert.match(result.bookingUrl, /^\/booking#[A-Za-z0-9_-]{43}$/);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('set-cookie'), null);
+  const headers = { Authorization: `Bearer ${result.bookingUrl.split('#')[1]}` };
+  const view = await handler(new Request(`${origin}/api/booking`, { headers }));
+  const booking = await view.json();
+  assert.equal(booking.status, 'confirmed');
+  assert.equal(booking.paymentMethod, 'in_person');
+  assert.equal(booking.paymentStatus, 'unpaid');
+  assert.equal(booking.checkoutUrl, null);
+  assert.equal((await handler(new Request(`${origin}/api/booking`))).status, 404);
+  const cancelled = await handler(new Request(`${origin}/api/booking`, { method: 'POST', headers: { ...headers, Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'cancel' }) }));
+  assert.equal((await cancelled.json()).status, 'cancelled');
 });
 
 test('Vercel web adapter preserves signed raw bodies and keeps private tokens out of request URLs', async (t) => {

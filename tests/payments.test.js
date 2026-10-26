@@ -22,6 +22,49 @@ test('unconfigured or misplaced live payment keys fail closed', () => {
   assert.throws(() => paymentProvider({ STRIPE_SECRET_KEY: 'sk_live_fixture', STRIPE_WEBHOOK_SECRET: 'whsec_fixture', APP_SECRET: 'x'.repeat(32), VERCEL_ENV: 'preview' }), /only/);
 });
 
+test('paying in person confirms without Stripe, keeps server pricing, and retries without duplicates', async (t) => {
+  const { db, input, now } = await fixture(t);
+  const payments = createPayments(db, { secret: 'isolated-in-person-secret-at-least-32-characters', provider: () => { throw new Error('Stripe must not be called'); } });
+  const request = { ...input, paymentMethod: 'in_person', price: 1 };
+  const results = await Promise.all([payments.start(request, now), payments.start(request, now)]);
+  assert.deepEqual(results[0], results[1]);
+  const row = await db.prepare('SELECT * FROM bookings').get();
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM bookings').get()).n, 1);
+  assert.equal(row.status, 'confirmed');
+  assert.equal(row.payment_status, 'unpaid');
+  assert.equal(row.payment_method, 'in_person');
+  assert.equal(row.price, 4000);
+  assert.equal(row.checkout_params, null);
+  assert.equal(row.hold_expires_at, null);
+  assert.equal(results[0].bookingUrl, `/booking#${payments.managementToken(row.id)}`);
+  assert.equal(results[0].checkoutUrl, undefined);
+  assert(!(await availableSlots(db, input.date, 'haircut', now)).some(slot => slot.time === input.time));
+  await payments.sweep(now + 24 * 60 * 60_000);
+  assert.equal((await db.prepare('SELECT status FROM bookings').get()).status, 'confirmed');
+  await payments.cancel(row.id);
+  assert((await availableSlots(db, input.date, 'haircut', now)).some(slot => slot.time === input.time));
+});
+
+test('online and in-person bookings compete for the same barber and cannot switch a request method', async (t) => {
+  const { db, payments, provider, input, now } = await fixture(t);
+  const online = await payments.start(input, now);
+  await assert.rejects(payments.start({ ...input, paymentMethod: 'in_person' }, now), { status: 409 });
+  await assert.rejects(payments.start({ ...input, requestId: randomUUID(), paymentMethod: 'in_person' }, now), { status: 409 });
+  assert.equal((await db.prepare('SELECT status FROM bookings WHERE id = ?').get(online.id)).status, 'pending');
+  assert.equal(provider.sessions.size, 1);
+  await payments.cancel(online.id);
+  const inPerson = await payments.start({ ...input, requestId: randomUUID(), paymentMethod: 'in_person' }, now);
+  await assert.rejects(payments.start({ ...input, requestId: randomUUID() }, now), { status: 409 });
+  assert.equal((await db.prepare('SELECT status FROM bookings WHERE id = ?').get(inPerson.id)).status, 'confirmed');
+});
+
+test('invalid payment choices and contact details create no in-person appointment', async (t) => {
+  const { db, payments, input, now } = await fixture(t);
+  for (const paymentMethod of [null, '', 'cash', 'paid', false, {}]) await assert.rejects(payments.start({ ...input, paymentMethod }, now), { status: 400 });
+  await assert.rejects(payments.start({ ...input, paymentMethod: 'in_person', phone: 'bad' }, now), { status: 400 });
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM bookings').get()).n, 0);
+});
+
 test('checkout snapshots the server price, blocks overlaps, and retries idempotently', async (t) => {
   const { db, payments, provider, input, now } = await fixture(t);
   const first = await payments.start({ ...input, price: 1 }, now);

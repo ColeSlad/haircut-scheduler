@@ -8,8 +8,8 @@ import { createPayments } from './payments.js';
 import { createStorage } from './storage.js';
 
 const categories = ['Short cuts', 'Texture', 'Beards', 'Long cuts'];
-export function createApi(db, { origin, secure, provider, storage = createStorage(db, { callbackOrigin: origin }) }) {
-  const payments = createPayments(db, { origin, provider });
+export function createApi(db, { origin, secure, provider, secret, storage = createStorage(db, { callbackOrigin: origin }) }) {
+  const payments = createPayments(db, { origin, provider, secret });
   const authKeys = async () => (await passwordAuthKeys(db));
   return async function api(req, res, url) {
     const path = url.pathname;
@@ -48,7 +48,7 @@ export function createApi(db, { origin, secure, provider, storage = createStorag
       await db.prepare('SELECT id FROM settings WHERE id = 1').get().then((row) => { if (!row) throw new HttpError(503, 'Setup incomplete.'); });
       return json({ ok: true });
     }
-    if (path === '/api/public' && method === 'GET') return json({ ...(await publicData(db)), bookingEnabled: payments.configured() });
+    if (path === '/api/public' && method === 'GET') return json({ ...(await publicData(db)), bookingEnabled: true, onlinePaymentEnabled: payments.configured() });
     if (path === '/api/availability' && method === 'GET') {
       const date = url.searchParams.get('date');
       await payments.refreshAvailability(date);
@@ -59,6 +59,7 @@ export function createApi(db, { origin, secure, provider, storage = createStorag
       const input = await readJson(req);
       if (input.website) throw new HttpError(400, 'Unable to book this appointment.');
       const checkout = await payments.start(input);
+      if (checkout.bookingUrl) return json({ id: checkout.id, bookingUrl: checkout.bookingUrl }, 201);
       return json({ id: checkout.id, checkoutUrl: checkout.checkoutUrl }, 201, {
         'Set-Cookie': `checkout_${checkout.id}=${checkout.token}; HttpOnly; SameSite=Lax; Path=/api/checkout/return/${checkout.id}; Max-Age=86400${secure ? '; Secure' : ''}`,
       });
@@ -76,7 +77,7 @@ export function createApi(db, { origin, secure, provider, storage = createStorag
       } else if (booking.status === 'pending') {
         try { booking = await payments.reconcile(booking.id); } catch { /* Never report confirmation without provider verification. */ }
       }
-      return json({ id: booking.id, serviceName: booking.service_name, price: booking.price, duration: booking.duration, date: booking.date, time: booking.time, startsAt: booking.starts_at, endsAt: booking.ends_at, status: booking.status, paymentStatus: booking.payment_status, amountRefunded: booking.amount_refunded, checkoutUrl: booking.status === 'pending' ? booking.checkout_url : null, name: booking.name, timezone: (await settings(db)).timezone });
+      return json({ id: booking.id, serviceName: booking.service_name, price: booking.price, duration: booking.duration, date: booking.date, time: booking.time, startsAt: booking.starts_at, endsAt: booking.ends_at, status: booking.status, paymentStatus: booking.payment_status, paymentMethod: booking.payment_method, amountRefunded: booking.amount_refunded, checkoutUrl: booking.status === 'pending' ? booking.checkout_url : null, name: booking.name, timezone: (await settings(db)).timezone });
     }
     if (path === '/api/admin/session' && method === 'GET') {
       let authenticated = false;
@@ -103,7 +104,7 @@ export function createApi(db, { origin, secure, provider, storage = createStorag
         return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie('', secure) });
       }
       if (path === '/api/admin/data' && method === 'GET') {
-        return json({ ...(await publicData(db)), services: (await db.prepare("SELECT * FROM services WHERE id = 'haircut'").all()), bookings: (await db.prepare(`SELECT id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, status, created_at, payment_status, payment_intent_id, amount_refunded, CASE WHEN checkout_session_id LIKE 'cs_test_%' THEN 'test' ELSE 'live' END AS payment_mode FROM bookings ORDER BY starts_at DESC`).all()), daysOff: (await db.prepare('SELECT * FROM days_off ORDER BY date').all()) });
+        return json({ ...(await publicData(db)), services: (await db.prepare("SELECT * FROM services WHERE id = 'haircut'").all()), bookings: (await db.prepare(`SELECT id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, status, created_at, payment_status, payment_method, payment_intent_id, amount_refunded, CASE WHEN checkout_session_id LIKE 'cs_test_%' THEN 'test' ELSE 'live' END AS payment_mode FROM bookings ORDER BY starts_at DESC`).all()), daysOff: (await db.prepare('SELECT * FROM days_off ORDER BY date').all()) });
       }
       if (path === '/api/admin/settings' && method === 'PUT') {
         const input = await readJson(req);

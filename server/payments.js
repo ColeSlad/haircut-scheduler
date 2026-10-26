@@ -15,10 +15,14 @@ export function paymentProvider(env = process.env) {
 const objectId = (value) => typeof value === 'string' ? value : value?.id;
 const unavailable = () => new HttpError(503, 'Payment could not be checked. Please try again; your time is still reserved.');
 
-export function createPayments(db, { origin, provider = paymentProvider } = {}) {
+export function createPayments(db, { origin, provider = paymentProvider, secret = process.env.APP_SECRET } = {}) {
   const get = typeof provider === 'function' ? provider : () => provider;
   const bookingById = (id) => db.prepare('SELECT * FROM bookings WHERE id = ?').get(id);
-  const managementToken = (id) => createHmac('sha256', get().secret).update(`booking:${id}`).digest('base64url');
+  const managementToken = (id) => {
+    const key = secret || get().secret;
+    if (!key || key.length < 32) throw new HttpError(503, 'Booking is not configured yet.');
+    return createHmac('sha256', key).update(`booking:${id}`).digest('base64url');
+  };
 
   async function ensureCheckout(booking, requestOptions = {}) {
     const { stripe } = get();
@@ -40,21 +44,32 @@ export function createPayments(db, { origin, provider = paymentProvider } = {}) 
   }
 
   async function start(input, now = Date.now()) {
-    get(); // Fail before reserving a slot when payments are unconfigured.
+    const method = input.paymentMethod === undefined ? 'online' : input.paymentMethod;
+    if (!['online', 'in_person'].includes(method)) throw new HttpError(400, 'Choose pay now or pay in person.');
+    if (method === 'online') get(); // Never silently change a requested online payment.
     if (typeof input.requestId !== 'string' || !/^[a-f0-9-]{36}$/.test(input.requestId)) throw new HttpError(400, 'Refresh this page and try again.');
     const requestHash = tokenHash(input.requestId);
-    const fingerprint = tokenHash(JSON.stringify([input.date, input.time, input.serviceId ?? 'haircut', input.firstName, input.lastName, input.phone]));
+    const details = [input.date, input.time, input.serviceId ?? 'haircut', input.firstName, input.lastName, input.phone];
+    // Preserve fingerprints for online checkouts started before payment choices existed.
+    if (method === 'in_person') details.push(method);
+    const fingerprint = tokenHash(JSON.stringify(details));
     await refreshAvailability(input.date, now);
     const booking = await db.transaction(async (tx) => {
       const previous = await tx.prepare('SELECT * FROM bookings WHERE request_hash = ?').get(requestHash);
       if (previous) {
         if (previous.request_fingerprint !== fingerprint) throw new HttpError(409, 'Your booking details changed. Please choose your time again.');
-        if (previous.status !== 'pending') throw new HttpError(409, 'This checkout is already finished. Use your appointment link or choose another time.');
+        if (method === 'in_person' && previous.payment_method === method && previous.status === 'confirmed') return previous;
+        if (previous.status !== 'pending' || method !== 'online') throw new HttpError(409, 'This booking is already finished. Use your appointment link or choose another time.');
         return previous;
       }
       const id = randomUUID();
       const token = managementToken(id);
       const created = await createBooking(tx, input, now, { id, token });
+      if (method === 'in_person') {
+        await tx.prepare(`UPDATE bookings SET status = 'confirmed', payment_status = 'unpaid', payment_method = 'in_person',
+          request_hash = ?, request_fingerprint = ? WHERE id = ?`).run(requestHash, fingerprint, id);
+        return tx.prepare('SELECT * FROM bookings WHERE id = ?').get(id);
+      }
       if (created.price < 50 || created.price > 100000) throw new HttpError(400, 'Online booking is unavailable at this price. Please contact the barber.');
       const expiresAt = Math.floor(now / 1000) + 31 * 60;
       const params = {
@@ -65,9 +80,10 @@ export function createPayments(db, { origin, provider = paymentProvider } = {}) 
         success_url: `${origin}/api/checkout/return/${id}`,
         cancel_url: `${origin}/api/checkout/return/${id}`,
       };
-      await tx.prepare(`UPDATE bookings SET payment_status = 'unpaid', request_hash = ?, request_fingerprint = ?, hold_expires_at = ?, checkout_params = ? WHERE id = ?`).run(requestHash, fingerprint, expiresAt * 1000, JSON.stringify(params), id);
+      await tx.prepare(`UPDATE bookings SET payment_status = 'unpaid', payment_method = 'online', request_hash = ?, request_fingerprint = ?, hold_expires_at = ?, checkout_params = ? WHERE id = ?`).run(requestHash, fingerprint, expiresAt * 1000, JSON.stringify(params), id);
       return tx.prepare('SELECT * FROM bookings WHERE id = ?').get(id);
     });
+    if (method === 'in_person') return { id: booking.id, bookingUrl: `/booking#${managementToken(booking.id)}` };
     const session = await ensureCheckout(booking);
     await reconcile(booking.id, session);
     if (session.status !== 'open' || !session.url?.startsWith('https://checkout.stripe.com/')) throw new HttpError(409, 'This checkout has ended. Please choose another time.');
