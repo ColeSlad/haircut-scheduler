@@ -69,6 +69,21 @@ Alternatively, upload the legacy media through the authenticated Vercel Blob das
 
 Keep the original backup until the new site, videos, settings, reviews, and login have been verified. For a brand-new site without legacy data, use `db:seed` and `admin:create` instead. To add the second admin after import, run `admin:create` with the new email; do not reset the existing account just for testing.
 
+### Adding a second admin without copying database credentials
+
+Vercel Secret/Sensitive environment values cannot be read back after saving. Use the authenticated database Query editor and generate an insert locally:
+
+```sh
+cd /Users/colesladowsky/Desktop/Projects/haircut
+npm run admin:create -- --print-sql
+```
+
+Enter the new email and a password of 12–256 characters, then confirm it. Password entry is hidden. The command never connects to a database; it prints SQL containing the app's salted scrypt password hash, without the plaintext password.
+
+In Vercel, open **l2cuts → Storage → the Neon l2cuts database → Query**. Copy the generated statement from `WITH available_slot` through `RETURNING id, email;`, turn off **Read-only**, and run it against the production database. The returned row must show the new email. Restore Read-only, then sign in at `/admin` with the new credentials. No redeploy is needed for an account change.
+
+The insert never overwrites or resets an existing admin. It returns zero rows if that email already exists or both admin slots are full; this is not a successful account creation. Keep the SQL/hash out of Git and chat. The generator and creation safeguards are covered by isolated Postgres tests, including preserving the existing admin and sessions, duplicate retries, capacity, and escaped input.
+
 ## 4. Stripe and test deployment
 
 Create a webhook destination at `https://YOUR_TEST_HOST/api/stripe/webhook?x-vercel-protection-bypass=YOUR_PREVIEW_BYPASS_SECRET` in Stripe's test environment. Subscribe to:

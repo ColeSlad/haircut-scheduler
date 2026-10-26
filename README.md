@@ -38,6 +38,8 @@ Open **http://localhost:3000**. Vite serves the frontend and proxies APIs to por
 
 `npm run admin:create` securely prompts for an email and a hidden password of 12–256 characters. A new email adds an admin, up to two; an existing email resets only that account and revokes its sessions. Both admins have the same access. There is no default password, public registration, or client account requirement.
 
+If your production database URL is hidden as a Vercel Secret, run `npm run admin:create -- --print-sql` instead. It prompts for the new admin's email and a hidden, confirmed password, then prints SQL using the app's salted scrypt hash. It does not open a database connection or need production credentials. Paste only the generated SQL into the authenticated production database **Query** editor, switch off **Read-only**, and click **Run**; restore Read-only afterward. A returned ID/email confirms creation. Zero rows means that email already exists or both slots are occupied. This mode only fills an unused slot: it never resets or replaces an account. Keep the generated SQL private because it contains a password hash. See [the production setup steps](DEPLOYMENT.md#adding-a-second-admin-without-copying-database-credentials).
+
 ## Booking and payment rules
 
 Haircut is the only service. New installations default to 45 minutes and $40; migration preserves your current price and duration. Admin can set a price from $0.50 to $1,000. Prices are USD. Clients can pay the full price in person or through Stripe with cards and eligible wallets. No tips, subscriptions, or automatic tax calculation are configured.
