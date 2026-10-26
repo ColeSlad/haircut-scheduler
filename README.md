@@ -2,9 +2,9 @@
 
 A single-barber booking site with guest checkout and up to two email/password admins. The simple homepage, reviews, supplied logo, and videos are preserved.
 
-Clients choose a time and enter first name, last name, and phone. They pay the full haircut price through Stripe-hosted Checkout, which collects an email for the payment receipt. An appointment is confirmed only after the server verifies payment. Clients save their private appointment link to view, download a calendar event, or cancel. Booking emails, SMS, external calendar sync, and self-service rescheduling are not included.
+Clients choose a time, enter first name, last name, and phone, and choose **Pay now** or **Pay in person at the cut**. In-person bookings confirm immediately, with payment due at the appointment. Pay now uses Stripe-hosted Checkout and confirms only after the server verifies payment; Stripe collects an email for the payment receipt. Until Stripe is configured, Pay now is disabled and in-person booking remains available. Clients save their private appointment link to view, download a calendar event, or cancel. Booking emails, SMS, external calendar sync, and self-service rescheduling are not included.
 
-Admin manages appointments, the haircut price/duration, weekly hours, days off, business details, reviews, photos, and TikTok links. Payment and refund status appear beside appointments. Cancelling releases the time; refunds are handled separately in the Stripe Dashboard.
+Admin manages appointments, the haircut price/duration, weekly hours, days off, business details, reviews, photos, and TikTok links. Payment method and status appear beside appointments. Admin can mark an in-person payment received without changing the appointment status. Cancelling releases the time; online-payment refunds are handled separately in the Stripe Dashboard.
 
 ## Local setup
 
@@ -17,7 +17,7 @@ createdb haircut
 createdb haircut_test
 ```
 
-Set `DATABASE_URL` and `TEST_DATABASE_URL` to those separate local databases. Generate independent `APP_SECRET` and `CRON_SECRET` values with `openssl rand -hex 32`. Add Stripe **test** keys and a test Blob store to enable checkout and uploads; other local pages work without them.
+Set `DATABASE_URL` and `TEST_DATABASE_URL` to those separate local databases. Generate independent `APP_SECRET` and `CRON_SECRET` values with `openssl rand -hex 32`. In-person booking works without Stripe. Add Stripe **test** keys to enable Pay now and a test Blob store to enable uploads.
 
 For a new, empty installation:
 
@@ -36,11 +36,13 @@ Open **http://localhost:3000**. Vite serves the frontend and proxies APIs to por
 
 ## Booking and payment rules
 
-Haircut is the only service. New installations default to 45 minutes and $40; migration preserves your current price and duration. Admin can set a price from $0.50 to $1,000. Prices are USD, charged once in full, with cards and eligible wallets through Stripe. No tips, subscriptions, or automatic tax calculation are configured.
+Haircut is the only service. New installations default to 45 minutes and $40; migration preserves your current price and duration. Admin can set a price from $0.50 to $1,000. Prices are USD. Clients can pay the full price in person or through Stripe with cards and eligible wallets. No tips, subscriptions, or automatic tax calculation are configured.
+
+In-person bookings confirm in the server's availability transaction, remain marked unpaid until an admin records collection, and never create a Stripe session or expiring payment hold. Both payment choices use the same overlap protection, contact validation, rate limits, and private management links. Retries with the same request ID cannot create duplicate appointments or switch an existing online checkout to in-person payment.
 
 The studio time zone drives availability, including daylight-saving changes. Starts are offered every 15 minutes, must fit within working hours, and respect days off, minimum notice, and the booking horizon. Service edits affect new reservations; existing ones retain their booked price and duration. Hours changes do not silently cancel appointments. Upcoming paid appointments or pending checkouts prevent a time-zone change.
 
-Checkout reserves a slot for 31 minutes. Online appointments require at least 32 minutes of notice so checkout expires before the appointment starts, even if an imported configuration used less notice. Pending and confirmed bookings cannot overlap, enforced by both a database transaction and a Postgres exclusion constraint. A slot is released only when Stripe verifies expiry/cancellation, never just because a local timer elapsed. Stripe webhooks normally release expired sessions. Availability reads and new booking attempts recheck overdue holds for the requested date, with short provider timeouts and a shared one-minute retry lease. Failed checks keep the hold reserved. A bounded daily cleanup job provides additional recovery, so no frequent Vercel cron is required. Webhook processing and checkout retries are idempotent.
+Online checkout reserves a slot for 31 minutes. All appointments require at least 32 minutes of notice so the same available times work for either payment choice, even if an imported configuration used less notice. Pending and confirmed bookings cannot overlap, enforced by both a database transaction and a Postgres exclusion constraint. A pending online hold is released only when Stripe verifies expiry/cancellation, never just because a local timer elapsed. Stripe webhooks normally release expired sessions. Availability reads and new booking attempts recheck overdue holds for the requested date, with short provider timeouts and a shared one-minute retry lease. Failed checks keep the hold reserved. A bounded daily cleanup job provides additional recovery, so no frequent Vercel cron is required. Webhook processing and checkout retries are idempotent.
 
 Clients can cancel before the appointment starts. Cancellation does **not** automatically refund a payment. Admin issues full or partial refunds in Stripe; signed webhooks synchronize the refunded amount without changing appointment status. Stripe payment receipts require the receipt setting described in the deployment guide. No appointment confirmation email is promised.
 
