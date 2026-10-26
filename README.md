@@ -64,7 +64,7 @@ npm run build
 
 Tests require `TEST_DATABASE_URL` pointing to an isolated Postgres database whose role can create schemas. They create and remove unique test schemas and use a fake Stripe transport with real webhook-signature verification. They never call Stripe or use `DATABASE_URL`. GitHub Actions runs checks, tests, the production build, and a dependency audit against disposable Postgres.
 
-Browser verification covers desktop/mobile booking, back navigation, payment states, cancellation, admin layout, gallery filters, video playback, and uploads. Real Stripe test payments and Blob callbacks must also be verified on the configured Vercel test deployment before launch.
+Browser verification covers desktop/mobile booking, back navigation, payment states, cancellation, admin layout, gallery rendering, video playback, and uploads. Real Stripe test payments and Blob callbacks must also be verified on the configured Vercel test deployment before launch.
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for Vercel setup, migration, test/live keys, receipts, monitoring, and backup/restore procedures.
 

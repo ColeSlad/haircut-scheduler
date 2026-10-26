@@ -10,8 +10,10 @@ async function fixture(t) {
   const db = await testDatabase(t);
   const provider = fakeProvider();
   const payments = createPayments(db, { origin: 'https://www.l2cuts.com', provider });
-  const input = { requestId: randomUUID(), date: '2026-11-10', time: '09:00', firstName: 'Test', lastName: 'Customer', phone: '555-123-4567' };
-  const now = Date.parse('2026-11-09T12:00:00Z');
+  const now = Date.now();
+  const day = new Date(now);
+  do { day.setUTCDate(day.getUTCDate() + 1); } while (day.getUTCDay() !== 2);
+  const input = { requestId: randomUUID(), date: day.toISOString().slice(0, 10), time: '09:00', firstName: 'Test', lastName: 'Customer', phone: '555-123-4567' };
   return { db, provider, payments, input, now };
 }
 
