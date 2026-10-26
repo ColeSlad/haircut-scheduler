@@ -2,9 +2,11 @@
 
 A single-barber booking site with guest checkout and up to two email/password admins. The simple homepage, reviews, supplied logo, and videos are preserved.
 
-Clients choose a time, enter first name, last name, and phone, and choose **Pay now** or **Pay in person at the cut**. In-person bookings confirm immediately, with payment due at the appointment. Pay now uses Stripe-hosted Checkout and confirms only after the server verifies payment; Stripe collects an email for the payment receipt. Until Stripe is configured, Pay now is disabled and in-person booking remains available. Clients save their private appointment link to view, download a calendar event, or cancel. Booking emails, SMS, external calendar sync, and self-service rescheduling are not included.
+Clients choose a time, enter first name, last name, and phone, and choose **Pay now** or **Pay in person at the cut**. In-person bookings confirm immediately, with payment due at the appointment. Pay now uses Stripe-hosted Checkout and confirms only after the server verifies payment; Stripe collects an email for the payment receipt. Until Stripe is configured, Pay now is disabled and in-person booking remains available. Clients save their private appointment link to view, download a calendar event, or cancel. Client booking emails/texts, external calendar sync, and self-service rescheduling are not included.
 
 Admin manages appointments, the haircut price/duration, weekly hours, days off, business details, reviews, photos, and TikTok links. Payment method and status appear beside appointments. Admin can mark an in-person payment received without changing the appointment status. Cancelling releases the time; online-payment refunds are handled separately in the Stripe Dashboard.
+
+**Admin → Notifications** controls private barber SMS alerts. When Twilio is connected and alerts are enabled, confirmed bookings and cancellations text the barber the client name/phone, haircut, local date/time, duration, price, and payment status. The recipient is separate from the public contact phone. The panel includes a test text and delivery history. SMS is disabled by default and needs provider setup described in [DEPLOYMENT.md](DEPLOYMENT.md#6-barber-text-notifications); no provider keys go in the browser or Git.
 
 ## Local setup
 
