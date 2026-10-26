@@ -6,6 +6,8 @@ Clients choose a time, enter first name, last name, and phone, and choose **Pay 
 
 Admin manages appointments, the haircut price/duration, weekly hours, days off, business details, reviews, photos, and TikTok links. Payment method and status appear beside appointments. Admin can mark an in-person payment received without changing the appointment status. Cancelling releases the time; online-payment refunds are handled separately in the Stripe Dashboard.
 
+Anyone can post a name, 1–5 star rating, and review on **/reviews**, without an account. Reviews publish immediately. **Admin → Reviews** lets you edit reviews, hide/unhide them, and toggle up to three for the homepage. New submissions are not selected for the homepage automatically. The displayed score is calculated from all published reviews, excluding labeled placeholders. Public submissions are limited to five per hour per IP, validated on the server, and protected against duplicate retries. Review lists paginate in groups of 20; admin saves preserve submissions made while the editor is open and reject stale edits.
+
 **Admin → Notifications** controls private barber SMS alerts. When Twilio is connected and alerts are enabled, confirmed bookings and cancellations text the barber the client name/phone, haircut, local date/time, duration, price, and payment status. The recipient is separate from the public contact phone. The panel includes a test text and delivery history. SMS is disabled by default and needs provider setup described in [DEPLOYMENT.md](DEPLOYMENT.md#6-barber-text-notifications); no provider keys go in the browser or Git.
 
 ## Local setup
@@ -74,8 +76,8 @@ npm run build
 
 Tests require `TEST_DATABASE_URL` pointing to an isolated Postgres database whose role can create schemas. They create and remove unique test schemas and use a fake Stripe transport with real webhook-signature verification. They never call Stripe or use `DATABASE_URL`. GitHub Actions runs checks, tests, the production build, and a dependency audit against disposable Postgres.
 
-Browser verification covers desktop/mobile booking, back navigation, payment states, cancellation, admin layout, gallery rendering, video playback, and uploads. Real Stripe test payments and Blob callbacks must also be verified on the configured Vercel test deployment before launch.
+Browser verification covers desktop/mobile booking, back navigation, payment states, cancellation, admin layout, gallery rendering, video playback, uploads, anonymous review submission, review pagination, homepage selections, visibility, and empty states. Real Stripe test payments and Blob callbacks must also be verified on the configured Vercel test deployment before launch.
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for Vercel setup, migration, test/live keys, receipts, monitoring, and backup/restore procedures.
 
-Typography uses locally served [DM Sans](https://fonts.google.com/specimen/DM+Sans), with its [SIL Open Font License](public/assets/dm-sans-OFL.txt). TikTok embeds link to [@l2cuts](https://www.tiktok.com/@l2cuts); new posts are added manually. Reviews are admin-edited, and any placeholders should remain labeled until replaced.
+Typography uses locally served [DM Sans](https://fonts.google.com/specimen/DM+Sans), with its [SIL Open Font License](public/assets/dm-sans-OFL.txt). TikTok embeds link to [@l2cuts](https://www.tiktok.com/@l2cuts); new posts are added manually. Any placeholder reviews should remain labeled until replaced.
