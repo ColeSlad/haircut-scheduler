@@ -23,6 +23,10 @@ export function fakeProvider() {
         async expire(id) { const session = sessions.get(id); if (session.status !== 'open') throw new Error('Already finished'); session.status = 'expired'; return structuredClone(session); },
       } },
       charges: { async retrieve(id) { return structuredClone(charges.get(id)); } },
+      paymentIntents: { async retrieve(id) {
+        const session = [...sessions.values()].find((item) => item.payment_intent === id);
+        return { id, metadata: session?.payment_intent_data?.metadata || {} };
+      } },
     },
     sessions, charges,
     payBooking(id) {

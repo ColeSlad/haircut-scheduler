@@ -117,3 +117,19 @@ test('payment racing an unpaid cancellation is recorded before the slot is relea
   assert.equal(cancelled.payment_status, 'paid');
   assert((await availableSlots(db, input.date, 'haircut', now)).some((slot) => slot.time === input.time));
 });
+
+test('refunds arriving before checkout completion reconcile first, and unrelated Stripe events are ignored', async (t) => {
+  const { db, payments, provider, input, now } = await fixture(t);
+  const checkout = await payments.start(input, now);
+  provider.payBooking(checkout.id);
+  const charge = { id: 'ch_early', payment_intent: `pi_${checkout.id}`, amount: 4000, amount_refunded: 4000, currency: 'usd', livemode: false };
+  provider.charges.set(charge.id, charge);
+  const event = provider.event('charge.refunded', { id: charge.id });
+  await payments.webhook(event.raw, event.signature);
+  const booking = await db.prepare('SELECT * FROM bookings').get();
+  assert.equal(booking.status, 'confirmed'); assert.equal(booking.payment_status, 'refunded');
+  provider.charges.set('ch_unrelated', { id: 'ch_unrelated', payment_intent: 'pi_unrelated' });
+  const unrelated = provider.event('charge.refunded', { id: 'ch_unrelated' });
+  await payments.webhook(unrelated.raw, unrelated.signature);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM stripe_events').get()).n, 2);
+});

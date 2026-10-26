@@ -58,7 +58,7 @@ export function createPayments(db, { origin, provider = paymentProvider } = {}) 
       const expiresAt = Math.floor(now / 1000) + 31 * 60;
       const params = {
         mode: 'payment', payment_method_types: ['card'], client_reference_id: id,
-        metadata: { booking_id: id }, payment_intent_data: { metadata: { booking_id: id } },
+        metadata: { app: 'l2cuts', booking_id: id }, payment_intent_data: { metadata: { app: 'l2cuts', booking_id: id } },
         line_items: [{ price_data: { currency: 'usd', unit_amount: created.price, product_data: { name: 'Haircut' } }, quantity: 1 }],
         expires_at: expiresAt,
         success_url: `${origin}/api/checkout/return/${id}`,
@@ -78,7 +78,7 @@ export function createPayments(db, { origin, provider = paymentProvider } = {}) 
     const before = await bookingById(id);
     if (!before?.checkout_params) throw new HttpError(404, 'Checkout not found.');
     const session = suppliedSession || await ensureCheckout(before);
-    if (session.client_reference_id !== id || session.metadata?.booking_id !== id || session.livemode !== live ||
+    if (session.client_reference_id !== id || session.metadata?.app !== 'l2cuts' || session.metadata?.booking_id !== id || session.livemode !== live ||
       session.amount_total !== before.price || session.currency !== 'usd' || session.mode !== 'payment' ||
       (before.checkout_session_id && session.id !== before.checkout_session_id)) throw new Error('Stripe checkout does not match the reservation.');
     return db.transaction(async (tx) => {
@@ -125,15 +125,24 @@ export function createPayments(db, { origin, provider = paymentProvider } = {}) 
     if (await db.prepare('SELECT id FROM stripe_events WHERE id = ?').get(event.id)) return;
     if (['checkout.session.completed', 'checkout.session.expired', 'checkout.session.async_payment_succeeded', 'checkout.session.async_payment_failed'].includes(event.type)) {
       const session = await stripe.checkout.sessions.retrieve(event.data.object.id);
-      await reconcile(session.metadata?.booking_id, session);
+      if (session.metadata?.app === 'l2cuts') await reconcile(session.metadata.booking_id, session);
     } else if (event.type === 'charge.refunded') {
       const charge = await stripe.charges.retrieve(event.data.object.id);
       const intent = objectId(charge.payment_intent);
-      const booking = await db.prepare('SELECT * FROM bookings WHERE payment_intent_id = ?').get(intent);
-      if (!booking) throw unavailable(); // Retry after the checkout completion event.
-      if (charge.livemode !== live || charge.currency !== 'usd' || charge.amount !== booking.price || charge.amount_refunded < 0 || charge.amount_refunded > booking.price) throw new Error('Refund does not match the appointment.');
-      await db.prepare(`UPDATE bookings SET amount_refunded = GREATEST(amount_refunded, ?),
-        payment_status = CASE WHEN GREATEST(amount_refunded, ?) = price THEN 'refunded' ELSE 'partially_refunded' END WHERE id = ?`).run(charge.amount_refunded, charge.amount_refunded, booking.id);
+      let booking = intent ? await db.prepare('SELECT * FROM bookings WHERE payment_intent_id = ?').get(intent) : null;
+      if (!booking && intent) {
+        const payment = await stripe.paymentIntents.retrieve(intent);
+        if (payment.metadata?.app === 'l2cuts') {
+          // A refund can arrive before checkout completion. Reconcile the provider's
+          // current session first rather than depending on webhook delivery order.
+          booking = await reconcile(payment.metadata.booking_id);
+        }
+      }
+      if (booking) {
+        if (charge.livemode !== live || charge.currency !== 'usd' || charge.amount !== booking.price || charge.amount_refunded < 0 || charge.amount_refunded > booking.price) throw new Error('Refund does not match the appointment.');
+        await db.prepare(`UPDATE bookings SET amount_refunded = GREATEST(amount_refunded, ?),
+          payment_status = CASE WHEN GREATEST(amount_refunded, ?) = price THEN 'refunded' ELSE 'partially_refunded' END WHERE id = ?`).run(charge.amount_refunded, charge.amount_refunded, booking.id);
+      }
     }
     await db.prepare('INSERT INTO stripe_events VALUES (?, ?, ?) ON CONFLICT DO NOTHING').run(event.id, event.type, Date.now());
   }
