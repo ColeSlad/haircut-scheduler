@@ -5,9 +5,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '../server/legacy-store.js';
 import { testDatabase } from './helpers.js';
-import { readLegacy, importLegacy, uploadMedia } from '../scripts/import-sqlite.js';
+import { readLegacy, importLegacy, uploadMedia, loadMediaMap } from '../scripts/import-sqlite.js';
 import { publicData } from '../server/store.js';
 import { BlobNotFoundError } from '@vercel/blob';
+
+test('dashboard-uploaded media can be mapped without revealing a Blob credential', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'l2cuts-media-map-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const file = join(directory, 'map.json');
+  const origin = 'https://fixture.public.blob.vercel-storage.com';
+  writeFileSync(file, JSON.stringify({ origin, assets: { '/uploads/abc-123.mp4': `${origin}/videos/abc-123.mp4`, '/uploads/abc-123.jpg': 'https://other.example/posters/abc-123.jpg' } }));
+  const mapped = await loadMediaMap(file);
+  assert.equal(await mapped.upload('/uploads/abc-123.mp4', 'video'), `${origin}/videos/abc-123.mp4`);
+  await assert.rejects(mapped.upload('/uploads/abc-123.jpg', 'poster'), /valid uploaded asset/);
+  await assert.rejects(mapped.upload('/uploads/missing.mp4', 'video'), /valid uploaded asset/);
+});
 
 test('media import uploads missing blobs and reuses matching immutable files on retry', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'l2cuts-media-import-'));

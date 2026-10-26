@@ -9,6 +9,22 @@ import { imageType, trustedBlobUrl } from '../server/storage.js';
 
 const tables = ['settings', 'services', 'hours', 'days_off', 'bookings', 'admin', 'gallery', 'videos', 'home_videos', 'review_content'];
 
+// Media uploaded through Vercel's authenticated dashboard can be imported without
+// ever revealing a Blob read-write token to the local machine.
+export async function loadMediaMap(file) {
+  const mapping = JSON.parse(await readFile(file, 'utf8'));
+  if (!mapping || !mapping.assets || typeof mapping.assets !== 'object' || !trustedBlobUrl(`${mapping.origin}/photos/check.jpg`, mapping.origin)) throw new Error('Invalid media map.');
+  return {
+    blobOrigin: mapping.origin,
+    async upload(path, kind) {
+      const url = mapping.assets[path];
+      const folder = { video: 'videos', photo: 'photos', poster: 'posters' }[kind];
+      if (!trustedBlobUrl(url, mapping.origin) || !new URL(url).pathname.startsWith(`/${folder}/`)) throw new Error('Media map is missing a valid uploaded asset.');
+      return url;
+    },
+  };
+}
+
 export function readLegacy(file) {
   const source = new DatabaseSync(file, { readOnly: true });
   try {
@@ -81,10 +97,12 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (process.argv.includes('--dry-run')) {
       console.log('Source row counts:', Object.fromEntries(tables.map((table) => [table, source[table].length])));
     } else {
-      if (!process.env.BLOB_READ_WRITE_TOKEN || !process.env.BLOB_PUBLIC_ORIGIN) throw new Error('Configure the target Blob store before importing.');
+      const mapArgument = process.argv.find((argument) => argument.startsWith('--media-map='));
+      const mediaOptions = mapArgument ? await loadMediaMap(resolve(mapArgument.slice('--media-map='.length))) : {};
+      if (!mapArgument && (!process.env.BLOB_READ_WRITE_TOKEN || !process.env.BLOB_PUBLIC_ORIGIN)) throw new Error('Configure the target Blob store or provide --media-map=FILE before importing.');
       db = openPostgres(process.env.DATABASE_URL_DIRECT || process.env.DATABASE_URL);
       await migrate(db);
-      console.log('Import result:', await importLegacy(db, source, { dataDir }));
+      console.log('Import result:', await importLegacy(db, source, { dataDir, ...mediaOptions }));
     }
   } catch (error) { console.error(error.message); process.exitCode = 1; }
   finally { await db?.close(); }
