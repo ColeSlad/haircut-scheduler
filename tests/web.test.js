@@ -46,3 +46,20 @@ test('Vercel web adapter preserves signed raw bodies and keeps private tokens ou
   assert.equal(privateView.headers.get('cache-control'), 'no-store');
   assert.equal((await handler(new Request(`${origin}/api/booking/${token}`))).status, 404);
 });
+
+test('daily payment cleanup requires the cron secret', async (t) => {
+  const db = await testDatabase(t);
+  const origin = 'https://www.l2cuts.com';
+  const handler = createWebHandler(db, { origin, provider: fakeProvider() });
+  const previous = process.env.CRON_SECRET;
+  process.env.CRON_SECRET = 'isolated-cron-fixture-secret-at-least-32-characters';
+  try {
+    assert.equal((await handler(new Request(`${origin}/api/cron/payments`))).status, 401);
+    const response = await handler(new Request(`${origin}/api/cron/payments`, { headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` } }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { checked: 0, failed: 0 });
+  } finally {
+    if (previous === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = previous;
+  }
+});

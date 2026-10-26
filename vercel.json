@@ -5,7 +5,7 @@
   "outputDirectory": "dist",
   "regions": ["iad1"],
   "functions": { "api/index.js": { "maxDuration": 60 } },
-  "crons": [{ "path": "/api/cron/payments", "schedule": "* * * * *" }],
+  "crons": [{ "path": "/api/cron/payments", "schedule": "0 8 * * *" }],
   "redirects": [{ "source": "/:path*", "has": [{ "type": "host", "value": "l2cuts.com" }], "destination": "https://www.l2cuts.com/:path*", "permanent": true }],
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api" },
