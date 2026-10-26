@@ -27,6 +27,14 @@ export function twilioSender(env = process.env, clientFactory = twilio) {
       const client = clientFactory(config.account, config.token, { autoRetry: false, timeout: 4000 });
       return client.messages.create({ to: phone, body, statusCallback, validityPeriod: 900, ...(config.service ? { messagingServiceSid: config.service } : { from: config.from }) });
     },
+    async fetchStatus(sid) {
+      if (!/^SM[a-f\d]{32}$/i.test(sid)) throw new Error('Invalid message reference');
+      const config = configuration();
+      const client = clientFactory(config.account, config.token, { autoRetry: false, timeout: 4000 });
+      const result = await client.messages(sid).fetch();
+      if (result.sid !== sid || result.accountSid !== config.account) throw new Error('Unexpected SMS account or message');
+      return { sid: result.sid, to: result.to, status: result.status, errorCode: result.errorCode };
+    },
     validate(signature, url, params) {
       const config = configuration();
       return params.AccountSid === config.account && twilio.validateRequest(config.token, signature || '', url, params);
@@ -118,17 +126,45 @@ export function createNotifications(db, { origin, sender = twilioSender() } = {}
   async function deliver({ id, limit = 1 } = {}) {
     try { await flush(limit, id); } catch { console.error('barber_notification_dispatch_failed'); }
   }
-  async function callback(url, params, signature) {
-    if (!sender.validate(signature, url, params)) throw new HttpError(403, 'Invalid SMS callback signature.');
-    const attempt = new URL(url).searchParams.get('attempt');
-    if (!/^[a-f\d-]{36}$/i.test(attempt || '') || !/^SM[a-f\d]{32}$/i.test(params.MessageSid || '')) throw new HttpError(400, 'Invalid SMS callback.');
-    const state = deliveryState(params.MessageStatus);
-    if (!state) return;
-    const code = diagnosticCode(params.ErrorCode);
+  async function recordDelivery(attempt, sid, phone, state, code) {
     await db.prepare(`UPDATE sms_notifications SET provider_sid = COALESCE(provider_sid, ?), state = ?,
       error_code = CASE WHEN ? = 'failed' THEN COALESCE(?, NULLIF(error_code, '0')) ELSE NULL END, updated_at = ?
       WHERE attempt_id = ? AND phone = ? AND (provider_sid IS NULL OR provider_sid = ?) AND state != 'cancelled'
-      AND (state != 'delivered' OR ? = 'delivered') AND (state != 'failed' OR ? IN ('failed', 'delivered'))`).run(params.MessageSid, state, state, code, Date.now(), attempt, params.To, params.MessageSid, state, state);
+      AND (state != 'delivered' OR ? = 'delivered') AND (state != 'failed' OR ? IN ('failed', 'delivered'))`).run(sid, state, state, code, Date.now(), attempt, phone, sid, state, state);
   }
-  return { enqueue, adminData, save, queueTest, retry, flush, deliver, callback };
+  async function refresh() {
+    if (!sender.configured() || typeof sender.fetchStatus !== 'function') throw new HttpError(503, 'SMS status checks need provider setup.');
+    // Check at most three messages per explicit admin request. Read failures keep
+    // the last known state; a provider GET never queues or resends a text.
+    const jobs = await db.prepare(`SELECT * FROM sms_notifications WHERE provider_sid IS NOT NULL AND state IN ('accepted', 'unknown')
+      ORDER BY updated_at, created_at DESC LIMIT 3`).all();
+    let failures = 0;
+    for (const job of jobs) {
+      try {
+        const result = await sender.fetchStatus(job.provider_sid);
+        if (result.sid !== job.provider_sid || result.to !== job.phone) throw new Error('Unexpected SMS recipient or message');
+        const state = deliveryState(result.status);
+        if (!state) throw new Error('Unexpected SMS delivery status');
+        await recordDelivery(job.attempt_id, result.sid, result.to, state, diagnosticCode(result.errorCode));
+      } catch (error) { failures++; console.error('barber_notification_refresh_failed', job.id, sendFailureCode(error) || 'unknown'); }
+    }
+    if (failures) throw new HttpError(503, 'Unable to check some SMS delivery statuses. The last known statuses are preserved. Try again later.');
+    return { checked: jobs.length };
+  }
+  async function callback(url, params, signature) {
+    const received = new URL(url);
+    const attempt = received.searchParams.get('attempt');
+    if (!/^[a-f\d-]{36}$/i.test(attempt || '') || !/^SM[a-f\d]{32}$/i.test(params.MessageSid || '')) throw new HttpError(400, 'Invalid SMS callback.');
+    if (received.searchParams.getAll('attempt').length !== 1) throw new HttpError(400, 'Invalid SMS callback.');
+    // Validate the same public URL supplied on creation, independent of proxy
+    // rewrites and internal routing query parameters. The signed attempt and all
+    // posted parameters still participate in SDK validation.
+    const signedUrl = callbackUrl(origin, `/api/sms/status?attempt=${attempt}`);
+    if (!sender.validate(signature, signedUrl, params)) throw new HttpError(403, 'Invalid SMS callback signature.');
+    const state = deliveryState(params.MessageStatus);
+    if (!state) return;
+    const code = diagnosticCode(params.ErrorCode);
+    await recordDelivery(attempt, params.MessageSid, params.To, state, code);
+  }
+  return { enqueue, adminData, save, queueTest, retry, flush, deliver, refresh, callback };
 }

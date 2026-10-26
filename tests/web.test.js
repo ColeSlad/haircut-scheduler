@@ -132,6 +132,14 @@ test('SMS delivery callbacks accept provider form data only with a valid SDK sig
   assert.equal((await send('forged')).status, 403);
   assert.equal((await send(signature)).status, 200);
   assert.equal((await db.prepare('SELECT state FROM sms_notifications').get()).state, 'delivered');
+  // Vercel rewrites may append internal route parameters. Verify the canonical
+  // public callback URL we registered, while keeping all posted fields signed.
+  const forwarded = `${url}&path=sms%2Fstatus`;
+  const callback = body => handler(new Request(forwarded, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Twilio-Signature': signature }, body: new URLSearchParams(body).toString() }));
+  assert.equal((await callback(params)).status, 200);
+  assert.equal((await callback({ ...params, To: '+15550000000' })).status, 403);
+  const tampered = forwarded.replace(job.attempt_id, randomUUID());
+  assert.equal((await handler(new Request(tampered, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Twilio-Signature': signature }, body: new URLSearchParams(params).toString() }))).status, 403);
 });
 
 test('daily SMS recovery still runs when the payment provider is unavailable', async (t) => {

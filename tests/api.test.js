@@ -133,6 +133,27 @@ test('failed SMS delivery never turns a confirmed in-person booking into an erro
   assert.equal(admin.body.recent[0].error_code, '21610');
 });
 
+test('SMS status refresh requires admin authentication and origin checks, and is rate-limited without resending', async t => {
+  let sent = 0, reads = 0;
+  const phone = '+15559990000';
+  const notificationSender = { configured: () => true, validate: () => false,
+    async send() { sent++; return { sid: `SM${'d'.repeat(32)}`, status: 'queued' }; },
+    async fetchStatus(sid) { reads++; return { sid, to: phone, status: 'undelivered', errorCode: 30034 }; },
+  };
+  const { request, login } = await fixture(t, { notificationSender });
+  const headers = { cookie: await login() };
+  const path = '/api/admin/notifications/refresh';
+  assert.equal((await request(path, { method: 'POST', body: {} })).status, 401);
+  assert.equal((await request(path, { method: 'POST', headers: { ...headers, origin: 'https://other.example' }, body: {} })).status, 403);
+  await request('/api/admin/notifications', { method: 'PUT', headers, body: { phone, enabled: false } });
+  await request('/api/admin/notifications/test', { method: 'POST', headers, body: {} });
+  for (let i = 0; i < 10; i++) assert.equal((await request(path, { method: 'POST', headers, body: {} })).status, 200);
+  assert.equal((await request(path, { method: 'POST', headers, body: {} })).status, 429);
+  assert.equal(reads, 1); assert.equal(sent, 1);
+  const recent = (await request('/api/admin/notifications', { headers })).body.recent[0];
+  assert.equal(recent.state, 'failed'); assert.equal(recent.error_code, '30034');
+});
+
 test('only admins can record in-person payments, without changing online payment records', async (t) => {
   const { db, request, login } = await fixture(t);
   const input = await futureSlot(db);

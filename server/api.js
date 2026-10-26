@@ -140,6 +140,10 @@ export function createApi(db, { origin, secure, provider, secret, notificationSe
         await notifications.deliver({ id });
         return json({ ok: true });
       }
+      if (path === '/api/admin/notifications/refresh' && method === 'POST') {
+        await rateLimit(db, req, 'notification-refresh', 10, 60_000);
+        return json(await notifications.refresh());
+      }
       if (/^\/api\/admin\/notifications\/[a-f\d-]{36}\/retry$/.test(path) && method === 'POST') {
         await rateLimit(db, req, 'notification-retry', 10, 60 * 60_000);
         const id = path.split('/').at(-2);

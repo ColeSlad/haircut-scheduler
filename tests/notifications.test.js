@@ -57,6 +57,59 @@ test('official Twilio SDK gets bounded requests, a sender, and a signed delivery
   assert.equal(sender.validate(signature, request.statusCallback, { ...params, To: '+15550000000' }), false);
 });
 
+test('status checks use the official SDK with bounded reads and verify account and message identity', async () => {
+  const sid = `SM${'b'.repeat(32)}`;
+  let result = { sid, accountSid: env.TWILIO_ACCOUNT_SID, to: phone, status: 'undelivered', errorCode: 30034, body: 'private provider body' };
+  let reads = 0;
+  const sender = twilioSender(env, (account, token, options) => {
+    assert.equal(account, env.TWILIO_ACCOUNT_SID); assert.equal(token, env.TWILIO_AUTH_TOKEN);
+    assert.deepEqual(options, { autoRetry: false, timeout: 4000 });
+    return { messages: reference => { assert.equal(reference, sid); return { fetch: async () => { reads++; return result; } }; } };
+  });
+  assert.deepEqual(await sender.fetchStatus(sid), { sid, to: phone, status: 'undelivered', errorCode: 30034 });
+  await assert.rejects(sender.fetchStatus('invalid'), /Invalid message/);
+  assert.equal(reads, 1);
+  result = { ...result, accountSid: `AC${'f'.repeat(32)}` };
+  await assert.rejects(sender.fetchStatus(sid), /Unexpected SMS account/);
+});
+
+test('admin refresh recovers a missed failure callback without sending another text', async t => {
+  const { db, notifications, sender, sent } = await fixture(t);
+  const id = await notifications.queueTest(); await notifications.deliver({ id });
+  sender.fetchStatus = async sid => ({ sid, to: phone, status: 'undelivered', errorCode: 30034 });
+  assert.deepEqual(await notifications.refresh(), { checked: 1 });
+  const job = await db.prepare('SELECT * FROM sms_notifications WHERE id = ?').get(id);
+  assert.equal(job.state, 'failed'); assert.equal(job.error_code, '30034');
+  assert.equal(sent.length, 1); assert.equal(job.attempts, 1);
+  assert.deepEqual(await notifications.refresh(), { checked: 0 });
+});
+
+test('status reads preserve delivered callbacks during a race and never trust a mismatched recipient', async t => {
+  const { db, notifications, sender } = await fixture(t);
+  const id = await notifications.queueTest(); await notifications.deliver({ id });
+  const job = await db.prepare('SELECT * FROM sms_notifications WHERE id = ?').get(id);
+  sender.fetchStatus = async sid => {
+    await notifications.callback(...signedCallback(job, 'delivered'));
+    return { sid, to: phone, status: 'queued' };
+  };
+  await notifications.refresh();
+  assert.equal((await db.prepare('SELECT state FROM sms_notifications WHERE id = ?').get(id)).state, 'delivered');
+  const other = await notifications.queueTest(); await notifications.deliver({ id: other });
+  sender.fetchStatus = async sid => ({ sid, to: '+15550000000', status: 'delivered' });
+  await assert.rejects(notifications.refresh(), { status: 503 });
+  assert.equal((await db.prepare('SELECT state FROM sms_notifications WHERE id = ?').get(other)).state, 'accepted');
+});
+
+test('status refresh bounds provider reads and preserves prior states when the provider is unavailable', async t => {
+  const { db, notifications, sender, sent } = await fixture(t);
+  for (let i = 0; i < 4; i++) { const id = await notifications.queueTest(); await notifications.deliver({ id }); }
+  let reads = 0;
+  sender.fetchStatus = async () => { reads++; throw Object.assign(new Error('Unavailable'), { status: 503 }); };
+  await assert.rejects(notifications.refresh(), { status: 503 });
+  assert.equal(reads, 3); assert.equal(sent.length, 4);
+  assert.equal((await db.prepare("SELECT count(*) AS n FROM sms_notifications WHERE state = 'accepted' AND error_code IS NULL").get()).n, 4);
+});
+
 test('repeated booking events and concurrent dispatch send one SMS with appointment details and no private link', async (t) => {
   const { db, notifications, sent, row } = await fixture(t);
   await notifications.enqueue(db, row, 'confirmed'); await notifications.enqueue(db, row, 'confirmed');
