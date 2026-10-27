@@ -12,6 +12,8 @@ Anyone can post a name, 1–5 star rating, and review on **/reviews**, without a
 
 An Accepted SMS is still awaiting delivery confirmation. **Refresh status** checks up to three pending messages directly with Twilio and recovers delivery/failure results if a signed callback was missed, without sending another text. Error 30034 means the US local sender needs approved A2P 10DLC registration and linkage to the registered Messaging Service. Buying a number and upgrading the account alone do not complete sender registration.
 
+Public [Privacy Policy](https://www.l2cuts.com/privacy) and [Terms & Conditions](https://www.l2cuts.com/terms) pages identify L2 Cuts and the public support address, coleslad31@gmail.com. They include SMS privacy, recipient consent, variable message frequency, rates, opt-out, and support details for internal barber alerts. Both are standalone HTML pages linked from the site footer and work without JavaScript or database access. Keep their descriptions current if the messaging program changes; booking clients are not enrolled in SMS.
+
 ## Local setup
 
 Use **Node.js 24**, npm, and PostgreSQL 14 or newer. Production uses Neon Postgres and public Vercel Blob. SQLite is retained only for importing the previous installation.
