@@ -21,7 +21,7 @@ function header(path) {
 function footer() {
   return `<footer class="site-footer section-shell">
     <span>© ${new Date().getFullYear()} ${esc(data.settings.name)}</span>
-    <div>${data.settings.email ? `<a href="mailto:${esc(data.settings.email)}">Contact</a>` : ''}${data.settings.instagram ? `<a href="${esc(data.settings.instagram)}" target="_blank" rel="noreferrer">Instagram</a>` : ''}<a href="/admin">Admin login</a></div>
+    <div>${data.settings.email ? `<a href="mailto:${esc(data.settings.email)}">Contact</a>` : ''}${data.settings.instagram ? `<a href="${esc(data.settings.instagram)}" target="_blank" rel="noreferrer">Instagram</a>` : ''}<a href="/privacy">Privacy Policy</a><a href="/terms">Terms &amp; Conditions</a><a href="/admin">Admin login</a></div>
   </footer>`;
 }
 export async function refreshData() { data = await api('/api/public'); return data; }
