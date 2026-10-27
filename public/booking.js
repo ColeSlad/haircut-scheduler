@@ -1,4 +1,4 @@
-import { $, $$, esc, money, timeLabel, dateLabel, todayIn, addDays, api, arrow, chevron, smallIcon, toast, loadingButton, fieldError } from './shared.js';
+import { $, $$, esc, money, servicePrice, timeLabel, dateLabel, todayIn, addDays, api, arrow, chevron, smallIcon, toast, loadingButton, fieldError } from './shared.js';
 
 export function mountScheduler(data, navigate) {
   const root = $('#main');
@@ -7,11 +7,14 @@ export function mountScheduler(data, navigate) {
   const last = addDays(today, data.settings.bookingDays);
   const state = { step: 1, service: data.services[0], date: '', time: '', slots: [], loading: false, month: today.slice(0, 7), details: { paymentMethod: 'in_person' }, request: 0 };
   const payingOnline = () => state.details.paymentMethod === 'online';
+  const rangedPrice = () => state.service.priceMax > state.service.price;
   function paymentOptions() {
-    return `<fieldset class="payment-options"><legend>Payment</legend><label class="payment-option"><input type="radio" name="paymentMethod" value="in_person" ${!payingOnline() ? 'checked' : ''}>Pay in person at the cut</label><label class="payment-option"><input type="radio" name="paymentMethod" value="online" ${payingOnline() ? 'checked' : ''} ${!data.onlinePaymentEnabled ? 'disabled' : ''}>Pay now${!data.onlinePaymentEnabled ? ' (unavailable)' : ''}</label>${!data.onlinePaymentEnabled ? '<p class="fine-print">Online payment is not set up yet.</p>' : ''}</fieldset>`;
+    return `${rangedPrice() ? `<label class="payment-amount">Haircut amount (USD)<input name="amount" type="number" min="${(state.service.price / 100).toFixed(2)}" max="${(state.service.priceMax / 100).toFixed(2)}" step="0.01" required value="${esc(state.details.amount || '')}" placeholder="${servicePrice(state.service)}" aria-describedby="haircut-amount-help"><small id="haircut-amount-help">${servicePrice(state.service)}, depending on your cut.</small></label>` : ''}<fieldset class="payment-options"><legend>Payment</legend><label class="payment-option"><input type="radio" name="paymentMethod" value="in_person" ${!payingOnline() ? 'checked' : ''}>Pay in person at the cut</label><label class="payment-option"><input type="radio" name="paymentMethod" value="online" ${payingOnline() ? 'checked' : ''} ${!data.onlinePaymentEnabled ? 'disabled' : ''}>Pay now${!data.onlinePaymentEnabled ? ' (unavailable)' : ''}</label>${!data.onlinePaymentEnabled ? '<p class="fine-print">Online payment is not set up yet.</p>' : ''}</fieldset>`;
   }
   function summary() {
-    return `<aside class="booking-summary"><h2>Appointment summary</h2><div class="summary-service"><strong>${esc(state.service?.name || 'Haircut')}</strong><p>${state.service?.duration || 0} minutes · ${money(state.service?.price || 0)}</p></div><p class="summary-line">${state.date ? dateLabel(state.date, { weekday: 'short', month: 'short' }) : 'Date not selected'}</p><p class="summary-line">${state.time ? timeLabel(state.time) : 'Time not selected'}</p><p class="summary-line">${esc(data.settings.location)}</p><div class="summary-total"><span>Total</span><strong>${money(state.service?.price || 0)}</strong></div><p class="fine-print">${payingOnline() ? 'Pay online to confirm.' : 'Pay in person at your haircut.'}<br>All times in ${esc(data.settings.timezone.replaceAll('_', ' '))}.</p></aside>`;
+    const amount = Number(state.details.amount);
+    const selected = rangedPrice() && state.details.amount && amount * 100 >= state.service.price && amount * 100 <= state.service.priceMax;
+    return `<aside class="booking-summary"><h2>Appointment summary</h2><div class="summary-service"><strong>${esc(state.service.name)}</strong><p>${state.service.duration} minutes · ${servicePrice(state.service)}</p></div><p class="summary-line">${state.date ? dateLabel(state.date, { weekday: 'short', month: 'short' }) : 'Date not selected'}</p><p class="summary-line">${state.time ? timeLabel(state.time) : 'Time not selected'}</p><p class="summary-line">${esc(data.settings.location)}</p><div class="summary-total"><span>Total</span><strong aria-live="polite">${selected ? money(Math.round(amount * 100)) : servicePrice(state.service)}</strong></div><p class="fine-print">${payingOnline() ? 'Pay online to confirm.' : 'Pay in person at your haircut.'}<br>All times in ${esc(data.settings.timezone.replaceAll('_', ' '))}.</p></aside>`;
   }
   function calendar() {
     const [year, month] = state.month.split('-').map(Number);
@@ -56,7 +59,10 @@ export function mountScheduler(data, navigate) {
     $('[data-retry]', root)?.addEventListener('click', loadSlots);
     $$('[data-time]', root).forEach((button) => button.addEventListener('click', () => { state.time = button.dataset.time; render(); $(`[data-time="${state.time}"]`, root)?.focus(); }));
     const form = $('#details-form', root);
-    form?.addEventListener('input', () => { state.details = Object.fromEntries(new FormData(form)); });
+    form?.addEventListener('input', () => {
+      state.details = Object.fromEntries(new FormData(form));
+      $('.booking-summary', root).outerHTML = summary();
+    });
     form?.addEventListener('change', (event) => {
       if (event.target.name !== 'paymentMethod') return;
       state.details = Object.fromEntries(new FormData(form));
@@ -69,6 +75,7 @@ export function mountScheduler(data, navigate) {
       $('[data-error]', form).hidden = true;
       try {
         const details = { ...Object.fromEntries(new FormData(form)), date: state.date, time: state.time };
+        if (rangedPrice()) details.amount = Math.round(Number(details.amount) * 100);
         const fingerprint = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(details))))).map((byte) => byte.toString(16).padStart(2, '0')).join('');
         let saved;
         try { saved = JSON.parse(sessionStorage.getItem('haircut-checkout') || 'null'); } catch { /* Storage may be unavailable. */ }

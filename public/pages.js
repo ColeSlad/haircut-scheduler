@@ -1,4 +1,4 @@
-import { esc, money } from './shared.js';
+import { esc, servicePrice } from './shared.js';
 import { reviewCard } from './reviews.js';
 
 const photos = [
@@ -28,7 +28,7 @@ export function home(data) {
     <div class="home-copy">
       <h1>Haircuts</h1>
       <p>${esc(s.description)}</p>
-      ${haircut ? `<p class="home-price">${haircut.duration} min · ${money(haircut.price)}</p>` : ''}
+      ${haircut ? `<p class="home-price">${haircut.duration} min · ${servicePrice(haircut)}</p>` : ''}
       <div class="page-actions"><a class="button primary" href="/schedule">Book a cut</a><a class="text-link" href="/gallery">Gallery</a></div>
     </div>
     ${homeReviews(data.reviews)}
