@@ -19,7 +19,8 @@ export function appServer({ db = openStore(), origin = 'http://localhost:3000', 
       if (url.pathname.startsWith('/api/')) return await api(req, res, url);
       if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }); return res.end(); }
       let path;
-      if (['/', '/schedule', '/gallery', '/reviews', '/admin', '/booking'].includes(url.pathname)) path = resolve(publicDir, 'index.html');
+      if (['/privacy', '/terms'].includes(url.pathname)) path = resolve(publicDir, `${url.pathname.slice(1)}.html`);
+      else if (['/', '/schedule', '/gallery', '/reviews', '/admin', '/booking'].includes(url.pathname)) path = resolve(publicDir, 'index.html');
       else if (/^\/uploads\/[a-f0-9-]+\.(jpg|png|webp|mp4)$/.test(url.pathname)) path = resolve(dataDir, url.pathname.slice(1));
       else if (/^\/(assets\/[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+\.(css|js|svg|ico))$/.test(url.pathname)) path = resolve(publicDir, url.pathname.slice(1));
       const file = path && statSync(path, { throwIfNoEntry: false });

@@ -9,6 +9,8 @@
   "redirects": [{ "source": "/:path*", "has": [{ "type": "host", "value": "l2cuts.com" }], "destination": "https://www.l2cuts.com/:path*", "permanent": true }],
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api" },
+    { "source": "/privacy", "destination": "/privacy.html" },
+    { "source": "/terms", "destination": "/terms.html" },
     { "source": "/schedule", "destination": "/index.html" },
     { "source": "/gallery", "destination": "/index.html" },
     { "source": "/reviews", "destination": "/index.html" },
