@@ -3,6 +3,10 @@ import { defaults } from './defaults.js';
 import { reviewSummary } from './reviews.js';
 export { defaults };
 
+// One haircut: the existing service price is the minimum; the optional maximum
+// lives with the studio configuration so fixed-price installations keep working.
+export const servicePriceMax = (service, config) => config.haircutMaxPrice ?? service.price;
+
 export async function settings(db) {
   const row = await db.prepare('SELECT value FROM settings WHERE id = 1').get();
   if (!row) { const error = new Error('The database has not been initialized.'); error.status = 503; throw error; }
@@ -19,7 +23,7 @@ export async function publicData(db) {
     db.prepare('SELECT * FROM home_videos ORDER BY position').all(),
     reviewSummary(db),
   ]);
-  return { settings: config, services, hours, gallery, videos, homeVideos, reviews };
+  return { settings: config, services: services.map(service => ({ ...service, priceMax: servicePriceMax(service, config) })), hours, gallery, videos, homeVideos, reviews };
 }
 
 // Explicit setup only. Starting a server or deploying never seeds/overwrites user content.

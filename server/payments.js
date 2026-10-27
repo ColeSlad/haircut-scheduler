@@ -53,6 +53,7 @@ export function createPayments(db, { origin, provider = paymentProvider, secret 
     const details = [input.date, input.time, input.serviceId ?? 'haircut', input.firstName, input.lastName, input.phone];
     // Preserve fingerprints for online checkouts started before payment choices existed.
     if (method === 'in_person') details.push(method);
+    if (input.amount !== undefined) details.push(input.amount);
     const fingerprint = tokenHash(JSON.stringify(details));
     await refreshAvailability(input.date, now);
     const booking = await db.transaction(async (tx) => {

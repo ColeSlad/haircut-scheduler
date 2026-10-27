@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { publicData, settings } from './store.js';
+import { publicData, settings, servicePriceMax } from './store.js';
 import { HttpError, availableSlots, tokenHash, textField, validDate, validTime, minutes } from './scheduling.js';
 import { createSession, requireAdmin, sessionCookie, verifyPassword, passwordAuthKey, passwordAuthKeys, readCookie } from './auth.js';
 import { tiktokVideoUrl } from './videos.js';
@@ -152,7 +152,8 @@ export function createApi(db, { origin, secure, provider, secret, notificationSe
         return json({ ok: true });
       }
       if (path === '/api/admin/data' && method === 'GET') {
-        return json({ ...(await publicData(db)), services: (await db.prepare("SELECT * FROM services WHERE id = 'haircut'").all()), bookings: (await db.prepare(`SELECT id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, status, created_at, payment_status, payment_method, payment_intent_id, amount_refunded, CASE WHEN checkout_session_id LIKE 'cs_test_%' THEN 'test' ELSE 'live' END AS payment_mode FROM bookings ORDER BY starts_at DESC`).all()), daysOff: (await db.prepare('SELECT * FROM days_off ORDER BY date').all()), notifications: await notifications.adminData(), reviews: await listReviews(db, { admin: true }) });
+        const data = await publicData(db);
+        return json({ ...data, services: (await db.prepare("SELECT * FROM services WHERE id = 'haircut'").all()).map(service => ({ ...service, priceMax: servicePriceMax(service, data.settings) })), bookings: (await db.prepare(`SELECT id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, status, created_at, payment_status, payment_method, payment_intent_id, amount_refunded, CASE WHEN checkout_session_id LIKE 'cs_test_%' THEN 'test' ELSE 'live' END AS payment_mode FROM bookings ORDER BY starts_at DESC`).all()), daysOff: (await db.prepare('SELECT * FROM days_off ORDER BY date').all()), notifications: await notifications.adminData(), reviews: await listReviews(db, { admin: true }) });
       }
       if (path === '/api/admin/settings' && method === 'PUT') {
         const input = await readJson(req);
@@ -220,8 +221,12 @@ export function createApi(db, { origin, secure, provider, secret, notificationSe
         if (service?.id !== 'haircut' || ![true, 1].includes(service.active)) throw new HttpError(400, 'Keep the haircut service available.');
         if (!Number.isInteger(service.duration) || service.duration < 15 || service.duration > 180 || service.duration % 15) throw new HttpError(400, 'Haircut duration must be 15–180 minutes in 15-minute increments.');
         if (!Number.isInteger(service.price) || service.price < 50 || service.price > 100000) throw new HttpError(400, 'Price must be between $0.50 and $1,000.');
+        const maximum = service.priceMax === undefined ? service.price : service.priceMax;
+        if (!Number.isInteger(maximum) || maximum < service.price || maximum > 100000) throw new HttpError(400, 'Maximum price must be at least the minimum price and no more than $1,000.');
         await db.transaction(async (tx) => {
           await tx.prepare("UPDATE services SET duration = ?, price = ? WHERE id = 'haircut'").run(service.duration, service.price);
+          const config = { ...await settings(tx), haircutMaxPrice: maximum };
+          await tx.prepare('UPDATE settings SET value = ? WHERE id = 1').run(JSON.stringify(config));
         });
         return json({ ok: true });
       }

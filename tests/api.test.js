@@ -304,7 +304,7 @@ test('only the haircut is public and bookable, and admin cannot add other option
   }
   const booked = await request('/api/bookings', { method: 'POST', body: input });
   assert.equal(booked.status, 201);
-  assert.equal((await request('/api/admin/services', { method: 'PUT', body: { services: [{ ...haircut, name: 'Other name', duration: 60, price: 5000 }] }, headers })).status, 200);
+  assert.equal((await request('/api/admin/services', { method: 'PUT', body: { services: [{ ...haircut, name: 'Other name', duration: 60, price: 5000, priceMax: 5000 }] }, headers })).status, 200);
   const updated = (await request('/api/public')).body.services[0];
   assert.equal(updated.name, 'Haircut');
   assert.equal(updated.duration, 60);
@@ -312,6 +312,26 @@ test('only the haircut is public and bookable, and admin cannot add other option
   const saved = (await db.prepare('SELECT service_name, duration, price FROM bookings WHERE id = ?').get(booked.body.id));
   assert.deepEqual({ ...saved }, { service_name: 'Haircut', duration: 45, price: 4000 });
 });
+test('admin sets a validated haircut range without changing existing booked amounts', async (t) => {
+  const { db, request, login } = await fixture(t);
+  const headers = { cookie: await login() };
+  const service = (await request('/api/admin/data', { headers })).body.services[0];
+  const save = (price, priceMax) => request('/api/admin/services', { method: 'PUT', headers, body: { services: [{ ...service, price, priceMax }] } });
+  assert.equal((await save(2000, 3000)).status, 200);
+  assert.equal((await request('/api/public')).body.services[0].priceMax, 3000);
+  assert.equal((await request('/api/admin/data', { headers })).body.services[0].priceMax, 3000);
+  for (const [min, max] of [[2000, 1999], [2000, null], [2000, '3000'], [2000, 3000.5], [2000, 100001], [49, 3000]]) {
+    assert.equal((await save(min, max)).status, 400);
+  }
+  assert.equal((await settings(db)).haircutMaxPrice, 3000);
+  const input = { ...await futureSlot(db), paymentMethod: 'in_person', amount: 2750 };
+  const booked = await request('/api/bookings', { method: 'POST', body: input });
+  assert.equal(booked.status, 201);
+  assert.equal((await save(2500, 2500)).status, 200);
+  assert.equal((await db.prepare('SELECT price FROM bookings WHERE id = ?').get(booked.body.id)).price, 2750);
+  assert.equal((await request('/api/public')).body.services[0].priceMax, 2500);
+});
+
 test('admin can update the business, services, and availability with validation', async (t) => {
   const { db, request, login } = await fixture(t);
   const headers = { cookie: await login() };
@@ -320,7 +340,7 @@ test('admin can update the business, services, and availability with validation'
   assert.equal((await settings(db)).name, 'Cole’s studio');
   assert.equal((await request('/api/admin/settings', { method: 'PUT', body: { ...config, timezone: 'not/a-zone' }, headers })).status, 400);
   const data = (await publicData(db));
-  assert.equal((await request('/api/admin/services', { method: 'PUT', body: { services: data.services.map((s) => ({ ...s, price: 4500 })) }, headers })).status, 200);
+  assert.equal((await request('/api/admin/services', { method: 'PUT', body: { services: data.services.map((s) => ({ ...s, price: 4500, priceMax: 4500 })) }, headers })).status, 200);
   assert.equal((await db.prepare('SELECT price FROM services LIMIT 1').get()).price, 4500);
   assert.equal((await request('/api/admin/services', { method: 'PUT', body: { services: [] }, headers })).status, 400);
   const hours = data.hours.map((h) => ({ ...h, start: '10:00' }));

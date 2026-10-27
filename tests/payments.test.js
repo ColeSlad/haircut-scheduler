@@ -5,6 +5,7 @@ import { testDatabase } from './helpers.js';
 import { fakeProvider } from './fake-stripe.js';
 import { createPayments, paymentProvider } from '../server/payments.js';
 import { availableSlots } from '../server/scheduling.js';
+import { settings } from '../server/store.js';
 
 async function fixture(t) {
   const db = await testDatabase(t);
@@ -77,6 +78,34 @@ test('checkout snapshots the server price, blocks overlaps, and retries idempote
   assert(!JSON.stringify(session).includes(first.token));
   assert.equal((await db.prepare('SELECT status FROM bookings').get()).status, 'pending');
   await assert.rejects(payments.start({ ...input, requestId: randomUUID(), time: '09:15' }, now), { status: 409 });
+});
+
+test('ranged prices validate cents on the server and snapshot the chosen amount for either payment method', async (t) => {
+  for (const paymentMethod of ['online', 'in_person']) {
+    const { db, payments, provider, input, now } = await fixture(t);
+    await db.prepare("UPDATE services SET price = 2000 WHERE id = 'haircut'").run();
+    await db.prepare('UPDATE settings SET value = ? WHERE id = 1').run(JSON.stringify({ ...await settings(db), haircutMaxPrice: 3000 }));
+    for (const amount of [undefined, null, '', '2500', false, {}, 1999, 3001, 2500.5, Number.MAX_SAFE_INTEGER]) {
+      await assert.rejects(payments.start({ ...input, paymentMethod, amount }, now), { status: 400 });
+    }
+    assert.equal((await db.prepare('SELECT count(*) AS n FROM bookings').get()).n, 0);
+    for (const [index, amount] of [2000, 2550, 3000].entries()) {
+      const request = { ...input, requestId: randomUUID(), time: `${9 + index}:00`.padStart(5, '0'), paymentMethod, amount };
+      const booked = await payments.start(request, now);
+      const row = await db.prepare('SELECT * FROM bookings WHERE id = ?').get(booked.id);
+      assert.equal(row.price, amount);
+      assert.equal(row.status, paymentMethod === 'online' ? 'pending' : 'confirmed');
+      assert.equal((await payments.start(request, now)).id, booked.id);
+      await assert.rejects(payments.start({ ...request, amount: amount === 2000 ? 3000 : 2000 }, now), { status: 409 });
+      if (paymentMethod === 'online') {
+        assert.equal(provider.sessions.get(row.checkout_session_id).amount_total, amount);
+        provider.payBooking(row.id);
+        assert.equal((await payments.reconcile(row.id)).payment_status, 'paid');
+      }
+    }
+    await db.prepare('UPDATE settings SET value = ? WHERE id = 1').run(JSON.stringify({ ...await settings(db), haircutMaxPrice: 2200 }));
+    assert.deepEqual((await db.prepare('SELECT price FROM bookings ORDER BY price').all()).map(row => row.price), [2000, 2550, 3000]);
+  }
 });
 
 test('paid returns and repeated signed webhooks confirm once; forged signatures cannot confirm', async (t) => {

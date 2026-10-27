@@ -1,5 +1,5 @@
 import { randomBytes, createHash, randomUUID } from 'node:crypto';
-import { settings } from './store.js';
+import { settings, servicePriceMax } from './store.js';
 
 export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -75,8 +75,12 @@ export async function createBooking(db, input, now = Date.now(), { id = randomUU
     const slot = (await availableSlots(db, input.date, serviceId, now)).find((item) => item.time === input.time);
     if (!slot) throw new HttpError(409, 'That time is no longer available. Please choose another time.');
     const service = (await db.prepare('SELECT * FROM services WHERE id = ?').get(serviceId));
+    const config = await settings(db);
+    const maximum = servicePriceMax(service, config);
+    const price = input.amount === undefined && maximum === service.price ? service.price : input.amount;
+    if (!Number.isInteger(price) || price < service.price || price > maximum) throw new HttpError(400, `Choose a haircut amount between $${(service.price / 100).toFixed(2)} and $${(maximum / 100).toFixed(2)}.`);
     (await db.prepare(`INSERT INTO bookings (id, service_id, service_name, duration, price, date, time, starts_at, ends_at, name, email, phone, notes, token_hash, created_at, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`).run(id, service.id, service.name, service.duration, service.price, input.date, input.time, slot.startsAt, slot.endsAt, name, '', phone, '', tokenHash(token), now));
-    return { id, token, serviceName: service.name, duration: service.duration, price: service.price, date: input.date, time: input.time, startsAt: slot.startsAt, endsAt: slot.endsAt, name, status: 'pending', timezone: (await settings(db)).timezone };
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`).run(id, service.id, service.name, service.duration, price, input.date, input.time, slot.startsAt, slot.endsAt, name, '', phone, '', tokenHash(token), now));
+    return { id, token, serviceName: service.name, duration: service.duration, price, date: input.date, time: input.time, startsAt: slot.startsAt, endsAt: slot.endsAt, name, status: 'pending', timezone: config.timezone };
   });
 }
