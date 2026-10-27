@@ -130,6 +130,66 @@ The Notifications panel is available in admin, but automatic texts start disable
 
 For the L2 Cuts campaign's public policy fields, use **https://www.l2cuts.com/privacy** and **https://www.l2cuts.com/terms**. The SMS section is also directly available at **https://www.l2cuts.com/terms#sms-terms**. These static pages use the brand **L2 Cuts** and public support email **coleslad31@gmail.com**. The campaign description and consent process must match the internal barber alerts described there. A client entering a booking phone number does not enroll in SMS or trigger a welcome text. Publishing these pages does not itself register or approve a sender.
 
+### Campaign message samples
+
+These reflect the actual internal barber alert templates. Keep the registered brand and public admin URL, and use square brackets for variable content. The phone placeholder is the booking client's contact number; the private recipient number is not included. New alerts and setup tests include the STOP instruction. Previously queued alerts keep their original content.
+
+Confirmed booking, paying in person:
+
+```text
+L2 Cuts: New booking
+Client: [First and last name]
+Phone: [Client phone number]
+Haircut: [Date and time with time zone] ([Duration] min)
+Price: $[Amount] - Due in person
+Admin: https://www.l2cuts.com/admin
+Reply STOP to opt out.
+```
+
+Confirmed booking, paid online:
+
+```text
+L2 Cuts: New booking
+Client: [First and last name]
+Phone: [Client phone number]
+Haircut: [Date and time with time zone] ([Duration] min)
+Price: $[Amount] - Paid online
+Admin: https://www.l2cuts.com/admin
+Reply STOP to opt out.
+```
+
+Cancelled booking, payment was due in person:
+
+```text
+L2 Cuts: Booking cancelled
+Client: [First and last name]
+Phone: [Client phone number]
+Haircut: [Date and time with time zone] ([Duration] min)
+Price: $[Amount] - Not paid (in person)
+Admin: https://www.l2cuts.com/admin
+Reply STOP to opt out.
+```
+
+Cancelled booking, previously paid online:
+
+```text
+L2 Cuts: Booking cancelled
+Client: [First and last name]
+Phone: [Client phone number]
+Haircut: [Date and time with time zone] ([Duration] min)
+Price: $[Amount] - Paid online
+Admin: https://www.l2cuts.com/admin
+Reply STOP to opt out.
+```
+
+Requested setup test:
+
+```text
+L2 Cuts: booking texts are connected.
+Admin: https://www.l2cuts.com/admin
+Reply STOP to opt out.
+```
+
 In-person bookings queue an alert when their server transaction confirms. Online bookings queue one after Stripe verifies payment. Cancellations by the client or admin queue a cancellation alert. Pending checkouts, no-shows, completion updates, and manual payment recording do not send additional texts. Alerts include the client name/phone, haircut, local date/time and zone, duration, price/payment status, and the admin URL. Client private management links are excluded.
 
 The app writes alerts in the same database transaction as the booking transition and deduplicates repeated events. It attempts delivery before finishing the booking request, with a four-second provider timeout and no automatic provider retries. SMS failures do not undo bookings. The existing daily Hobby cleanup attempts up to three queued alerts if an initial dispatch was interrupted. It does not add a frequent cron job. Disabling alerts or changing the recipient cancels queued messages; it cannot recall a message already accepted by the provider.

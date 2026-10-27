@@ -46,7 +46,7 @@ If your production database URL is hidden as a Vercel Secret, run `npm run admin
 
 ## Booking and payment rules
 
-Haircut is the only service. New installations default to 45 minutes and $40; migration preserves your current price and duration. Admin can set a price from $0.50 to $1,000. Prices are USD. Clients can pay the full price in person or through Stripe with cards and eligible wallets. No tips, subscriptions, or automatic tax calculation are configured.
+Haircut is the only service. New installations default to 45 minutes and $40; migration preserves your current price and duration. **Admin → Haircut** sets minimum and maximum prices from $0.50 to $1,000; set both to the same amount for a fixed price. With a range, clients choose an amount before booking, and that amount becomes the full booking total for either payment method. The server validates integer cents against the current bounds and snapshots the selected amount; later range changes do not alter existing appointments. Prices are USD. Clients can pay in person or through Stripe with cards and eligible wallets. No tips, subscriptions, or automatic tax calculation are configured.
 
 In-person bookings confirm in the server's availability transaction, remain marked unpaid until an admin records collection, and never create a Stripe session or expiring payment hold. Both payment choices use the same overlap protection, contact validation, rate limits, and private management links. Retries with the same request ID cannot create duplicate appointments or switch an existing online checkout to in-person payment.
 
