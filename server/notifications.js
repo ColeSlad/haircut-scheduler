@@ -54,7 +54,7 @@ export function notificationBody(booking, config, kind, origin) {
   const when = new Intl.DateTimeFormat('en-US', { timeZone: config.timezone, month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(booking.starts_at);
   const price = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(booking.price / 100);
   const payment = booking.payment_method === 'in_person' ? booking.payment_status === 'paid' ? 'Paid in person' : kind === 'cancelled' ? 'Not paid (in person)' : 'Due in person' : ({ paid: 'Paid online', refunded: 'Refunded', partially_refunded: 'Partially refunded', unpaid: 'Unpaid', legacy_unpaid: 'Payment not recorded' })[booking.payment_status];
-  return `${clean(config.name)}: ${kind === 'confirmed' ? 'New booking' : 'Booking cancelled'}\nClient: ${clean(booking.name)}\nPhone: ${clean(booking.phone)}\n${clean(booking.service_name)}: ${when} (${booking.duration} min)\nPrice: ${price} - ${payment}\nAdmin: ${origin}/admin`;
+  return `${clean(config.name)}: ${kind === 'confirmed' ? 'New booking' : 'Booking cancelled'}\nClient: ${clean(booking.name)}\nPhone: ${clean(booking.phone)}\n${clean(booking.service_name)}: ${when} (${booking.duration} min)\nPrice: ${price} - ${payment}\nAdmin: ${origin}/admin\nReply STOP to opt out.`;
 }
 
 export function createNotifications(db, { origin, sender = twilioSender() } = {}) {
@@ -87,7 +87,7 @@ export function createNotifications(db, { origin, sender = twilioSender() } = {}
     if (!sender.configured()) throw new HttpError(400, 'Connect the SMS provider before sending a test.');
     const id = randomUUID();
     const now = Date.now();
-    await db.prepare(`INSERT INTO sms_notifications (id, kind, phone, body, attempt_id, created_at, updated_at) VALUES (?, 'test', ?, ?, ?, ?, ?)`).run(id, recipient.phone, `L2 Cuts: booking texts are connected.\nAdmin: ${origin}/admin`, id, now, now);
+    await db.prepare(`INSERT INTO sms_notifications (id, kind, phone, body, attempt_id, created_at, updated_at) VALUES (?, 'test', ?, ?, ?, ?, ?)`).run(id, recipient.phone, `L2 Cuts: booking texts are connected.\nAdmin: ${origin}/admin\nReply STOP to opt out.`, id, now, now);
     return id;
   }
   async function retry(id) {

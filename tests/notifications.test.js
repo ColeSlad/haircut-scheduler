@@ -118,6 +118,7 @@ test('repeated booking events and concurrent dispatch send one SMS with appointm
   assert.equal(sent[0].phone, phone);
   for (const detail of ['Test Client', '555-111-2222', 'Haircut', 'Oct 27, 2026', '9:00 AM EDT', '45 min', '$40.00', 'Due in person', `${origin}/admin`]) assert(sent[0].body.includes(detail), detail);
   assert(!sent[0].body.includes('/booking#')); assert(!sent[0].body.includes(row.token_hash));
+  assert(sent[0].body.endsWith('Reply STOP to opt out.'));
   assert.equal((await db.prepare('SELECT state FROM sms_notifications').get()).state, 'accepted');
 });
 
@@ -216,5 +217,6 @@ test('a test SMS can verify setup before automatic booking texts are enabled', a
   await notifications.save({ phone, enabled: false });
   await notifications.queueTest(); await notifications.flush();
   assert.equal(sent.length, 1); assert(sent[0].body.includes('booking texts are connected'));
+  assert(sent[0].body.endsWith('Reply STOP to opt out.'));
   assert.equal((await db.prepare('SELECT enabled FROM barber_notification_settings').get()).enabled, 0);
 });
