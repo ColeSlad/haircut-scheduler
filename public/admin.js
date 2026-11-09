@@ -80,10 +80,10 @@ export async function mountAdmin(publicData, { refreshData }) {
     return `<div class="admin-section-heading"><div><h2>Haircut</h2></div></div><form id="services-form"><div class="admin-panel service-editor"><div class="form-grid"><label>Duration (minutes)<select name="duration">${Array.from({ length: 12 }, (_, i) => (i + 1) * 15).map((n) => `<option ${service.duration === n ? 'selected' : ''} value="${n}">${n} minutes</option>`).join('')}</select></label><label>Minimum price (USD)<input name="price" type="number" min="0.50" max="1000" step="0.01" required value="${(service.price / 100).toFixed(2)}"></label><label>Maximum price (USD)<input name="priceMax" type="number" min="0.50" max="1000" step="0.01" required value="${((service.priceMax ?? service.price) / 100).toFixed(2)}"></label></div></div><p class="fine-print">Clients choose an amount within this range. Set both prices to the same amount for a fixed price. Prices are in USD. Changes apply to new bookings; existing appointments keep their booked price and duration.</p><p class="form-error" data-error role="alert" tabindex="-1" hidden></p><button class="button primary" type="submit">Save haircut ${arrow}</button></form>`;
   }
   function reviewsForm() {
-    return `<div class="admin-section-heading"><div><h2>Reviews</h2><p>${reviewRating(data.reviews)}</p></div><button class="text-link" id="refresh-reviews">Refresh reviews</button></div><p class="fine-print">Choose up to three reviews for the homepage (${data.reviews.homeCount}/3 selected). Ratings exclude hidden and placeholder reviews.</p><form id="reviews-form"><div id="review-editor-list">${data.reviews.items.length ? data.reviews.items.map(reviewRow).join('') : '<p class="empty-state">No reviews on this page.</p>'}</div><button class="button outline small" type="button" id="add-review">+ Add a review</button><p class="form-error" data-error role="alert" tabindex="-1" hidden></p><button class="button primary" type="submit">Save reviews ${arrow}</button></form><nav class="review-pagination" aria-label="Review pages"><button class="button outline small" id="previous-reviews" ${!reviewPrevious.length ? 'disabled' : ''}>Previous</button><button class="button outline small" id="next-reviews" ${!data.reviews.nextCursor ? 'disabled' : ''}>Next</button></nav>`;
+    return `<div class="admin-section-heading"><div><h2>Reviews</h2><p id="admin-review-rating">${reviewRating(data.reviews)}</p></div><button class="text-link" id="refresh-reviews">Refresh reviews</button></div><p class="fine-print">Choose up to three reviews for the homepage (<span id="home-review-count">${data.reviews.homeCount}</span>/3 selected). Ratings exclude hidden and placeholder reviews.</p><form id="reviews-form"><div id="review-editor-list">${data.reviews.items.length ? data.reviews.items.map(reviewRow).join('') : '<p class="empty-state">No reviews on this page.</p>'}</div><button class="button outline small" type="button" id="add-review">+ Add a review</button><p class="form-error" data-error role="alert" tabindex="-1" hidden></p><button class="button primary" type="submit">Save reviews ${arrow}</button></form><nav class="review-pagination" aria-label="Review pages"><button class="button outline small" id="previous-reviews" ${!reviewPrevious.length ? 'disabled' : ''}>Previous</button><button class="button outline small" id="next-reviews" ${!data.reviews.nextCursor ? 'disabled' : ''}>Next</button></nav>`;
   }
   function reviewRow(review = {}) {
-    return `<fieldset class="admin-panel review-editor" data-review-id="${esc(review.id || '')}" data-review-version="${review.version || ''}"><legend class="sr-only">Review by ${esc(review.name || 'new reviewer')}</legend><div class="form-grid"><label>Reviewer name<input name="reviewer" required maxlength="80" value="${esc(review.name || '')}" placeholder="Reviewer name"></label><label>Stars<select name="stars">${[1, 2, 3, 4, 5].map((stars) => `<option value="${stars}" ${stars === (review.stars || 5) ? 'selected' : ''}>${stars} ${stars === 1 ? 'star' : 'stars'}</option>`).join('')}</select></label><label class="full">Review text<textarea name="text" rows="2" required maxlength="600" placeholder="Review text">${esc(review.text || '')}</textarea></label><label class="toggle-label full"><input type="checkbox" name="showOnHome" ${review.showOnHome ? 'checked' : ''} ${review.hidden ? 'disabled' : ''}>Show on homepage</label><label class="toggle-label full"><input type="checkbox" name="hidden" ${review.hidden ? 'checked' : ''}>Hide from public reviews</label><label class="toggle-label full"><input type="checkbox" name="sample" ${review.sample !== false ? 'checked' : ''}>Placeholder review</label>${!review.id ? '<button class="subtle-button danger remove-row" type="button">Remove draft</button>' : ''}</div></fieldset>`;
+    return `<fieldset class="admin-panel review-editor" data-review-id="${esc(review.id || '')}" data-review-version="${review.version || ''}"><legend class="sr-only">Review by ${esc(review.name || 'new reviewer')}</legend><div class="form-grid"><label>Reviewer name<input name="reviewer" required maxlength="80" value="${esc(review.name || '')}" placeholder="Reviewer name"></label><label>Stars<select name="stars">${[1, 2, 3, 4, 5].map((stars) => `<option value="${stars}" ${stars === (review.stars || 5) ? 'selected' : ''}>${stars} ${stars === 1 ? 'star' : 'stars'}</option>`).join('')}</select></label><label class="full">Review text<textarea name="text" rows="2" required maxlength="600" placeholder="Review text">${esc(review.text || '')}</textarea></label><label class="toggle-label full"><input type="checkbox" name="showOnHome" ${review.showOnHome ? 'checked' : ''} ${review.hidden ? 'disabled' : ''}>Show on homepage</label><label class="toggle-label full"><input type="checkbox" name="hidden" ${review.hidden ? 'checked' : ''}>Hide from public reviews</label><label class="toggle-label full"><input type="checkbox" name="sample" ${review.sample !== false ? 'checked' : ''}>Placeholder review</label>${review.id ? `<button class="subtle-button danger full" type="button" data-delete-review aria-label="${esc(`Delete review by ${review.name}`)}">Delete review</button>` : '<button class="subtle-button danger remove-row" type="button">Remove draft</button>'}</div></fieldset>`;
   }
   function gallery() {
     return `<div class="admin-section-heading"><div><h2>Photos</h2></div></div><form id="gallery-form"><div id="gallery-editor-list">${data.gallery.map((item) => galleryRow(item)).join('')}</div><button type="button" class="button outline small" id="add-gallery">+ Add a photo</button><p class="fine-print">Upload JPEG, PNG, or WebP images under 5 MB. Only share photos you have permission to publish.</p><p class="form-error" data-error role="alert" tabindex="-1" hidden></p><button class="button primary" type="submit">Save gallery ${arrow}</button></form>`;
@@ -132,6 +132,7 @@ export async function mountAdmin(publicData, { refreshData }) {
       home.disabled = event.target.checked;
       if (home.disabled) home.checked = false;
     });
+    bindReviewDeletion();
     $('#refresh-reviews')?.addEventListener('click', () => reviewPage(null, 'refresh'));
     $('#next-reviews')?.addEventListener('click', () => reviewPage(data.reviews.nextCursor, 'next'));
     $('#previous-reviews')?.addEventListener('click', () => reviewPage(reviewPrevious.at(-1), 'previous'));
@@ -212,6 +213,27 @@ export async function mountAdmin(publicData, { refreshData }) {
     if (editing) showDialog('Leave without saving?', 'Your unsaved changes will be discarded.', 'Discard changes', change);
     else change();
   }
+  function bindReviewDeletion() {
+    $$('[data-delete-review]', root).forEach(button => button.addEventListener('click', () => {
+      const row = button.closest('.review-editor');
+      const review = data.reviews.items.find(item => item.id === row.dataset.reviewId);
+      showDialog('Delete review?', `Permanently delete the review by ${review.name}?`, 'Delete review', async () => {
+        const summary = await api(`/api/admin/reviews/${encodeURIComponent(review.id)}`, { method: 'DELETE', body: { version: review.version } });
+        data.reviews.items = data.reviews.items.filter(item => item.id !== review.id);
+        for (const key of ['count', 'ratedCount', 'rating', 'homeCount']) data.reviews[key] = summary[key];
+        row.remove();
+        if (root.isConnected && location.pathname === '/admin') {
+          $('#admin-review-rating', root).textContent = reviewRating(data.reviews);
+          $('#home-review-count', root).textContent = data.reviews.homeCount;
+          if (!$$('.review-editor', root).length) $('#review-editor-list', root).innerHTML = '<p class="empty-state">No reviews on this page.</p>';
+          $('#admin-dialog', root).addEventListener('close', () => $('#add-review', root)?.focus(), { once: true });
+        }
+        try { await refreshData(); }
+        catch { toast('Review deleted. Refresh the page to update the site.'); return; }
+        toast('Review deleted.');
+      }, true);
+    }));
+  }
   function bindRemove() { $$('.remove-row').forEach((button) => { button.onclick = () => { button.closest('fieldset, .day-off-row').remove(); editing = true; }; }); }
   function bindUploads() {
     $$('input[type="file"]').forEach((input) => { input.onchange = async () => {
@@ -248,9 +270,9 @@ export async function mountAdmin(publicData, { refreshData }) {
       });
     }));
   }
-  function showDialog(title, description, action, callback) {
+  function showDialog(title, description, action, callback, destructive = false) {
     const dialog = $('#admin-dialog');
-    $('#admin-dialog-content').innerHTML = `<h2>${esc(title)}</h2><p>${esc(description)}</p><p class="form-error" data-error role="alert" hidden></p><div class="dialog-actions"><button class="button outline" value="close">Go back</button><button class="button primary" type="button" id="dialog-confirm">${esc(action)}</button></div>`;
+    $('#admin-dialog-content').innerHTML = `<h2>${esc(title)}</h2><p>${esc(description)}</p><p class="form-error" data-error role="alert" hidden></p><div class="dialog-actions"><button class="button outline" value="close">Go back</button><button class="button ${destructive ? 'danger-button' : 'primary'}" type="button" id="dialog-confirm">${esc(action)}</button></div>`;
     dialog.showModal();
     $('#dialog-confirm').addEventListener('click', async (event) => {
       const restore = loadingButton(event.currentTarget, 'Updating…');
