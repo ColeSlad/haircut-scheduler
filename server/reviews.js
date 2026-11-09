@@ -71,6 +71,19 @@ export async function saveReviews(db, items) {
   });
 }
 
+export async function deleteReview(db, id, version) {
+  if (typeof id !== 'string' || !id || id.length > 80) throw new HttpError(400, 'Choose a valid review.');
+  if (!Number.isSafeInteger(version) || version < 1) throw new HttpError(400, 'Refresh the reviews before deleting.');
+  return db.transaction(async tx => {
+    const result = await tx.prepare('DELETE FROM reviews WHERE id = ? AND version = ?').run(id, version);
+    if (!result.changes) {
+      if (await tx.prepare('SELECT id FROM reviews WHERE id = ?').get(id)) throw new HttpError(409, 'This review changed since this page loaded. Refresh the reviews and try again.');
+      throw new HttpError(404, 'This review has already been removed. Refresh the reviews.');
+    }
+    return stats(tx);
+  });
+}
+
 // Run only during an explicit import into an empty target, after the legacy JSON
 // has been inserted. The SQL migration handles existing Postgres installations.
 export async function importLegacyReviews(db) {

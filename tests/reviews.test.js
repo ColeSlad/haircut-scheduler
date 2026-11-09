@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { testDatabase } from './helpers.js';
 import { migrate } from '../server/postgres.js';
-import { listReviews, reviewSummary, saveReviews, submitReview } from '../server/reviews.js';
+import { deleteReview, listReviews, reviewSummary, saveReviews, submitReview } from '../server/reviews.js';
 
 const input = () => ({ name: 'Test Client', text: 'A great haircut.', stars: 5, requestId: randomUUID() });
 const adminReview = (changes = {}) => ({ name: 'Test Client', text: 'An edited review.', stars: 5, sample: false, showOnHome: false, hidden: false, ...changes });
@@ -97,4 +97,31 @@ test('review fields and homepage settings are validated on the server', async (t
   await assert.rejects(saveReviews(db, [adminReview({ hidden: true, showOnHome: true })]), { status: 400 });
   await assert.rejects(saveReviews(db, [adminReview({ sample: 'false' })]), { status: 400 });
   assert.equal((await db.prepare('SELECT count(*) AS n FROM reviews').get()).n, 0);
+});
+
+test('deleting a featured review removes its content and updates public ratings and homepage selections', async (t) => {
+  const db = await testDatabase(t);
+  await saveReviews(db, [adminReview({ name: 'Delete me', stars: 1, showOnHome: true }), adminReview({ name: 'Keep me', stars: 5, showOnHome: true })]);
+  const row = (await listReviews(db, { admin: true })).items.find(item => item.name === 'Delete me');
+  const summary = await deleteReview(db, row.id, row.version);
+  assert.deepEqual(summary, { count: 1, ratedCount: 1, rating: 5, homeCount: 1 });
+  assert.equal(await db.prepare('SELECT * FROM reviews WHERE id = ?').get(row.id), undefined);
+  assert.deepEqual((await listReviews(db)).items.map(item => item.name), ['Keep me']);
+  assert.deepEqual((await reviewSummary(db)).items.map(item => item.name), ['Keep me']);
+  await assert.rejects(saveReviews(db, [{ ...row, text: 'A stale editor cannot recreate a deleted review.' }]), { status: 409 });
+  await assert.rejects(deleteReview(db, row.id, row.version), { status: 404 });
+});
+
+test('deletion validates versions, protects newer edits, and also removes hidden or placeholder reviews', async (t) => {
+  const db = await testDatabase(t);
+  await saveReviews(db, [adminReview({ hidden: true }), adminReview({ sample: true, showOnHome: true })]);
+  const rows = (await listReviews(db, { admin: true })).items;
+  for (const version of [undefined, null, 0, -1, '1', 1.5, Number.MAX_SAFE_INTEGER + 1]) await assert.rejects(deleteReview(db, rows[0].id, version), { status: 400 });
+  for (const id of [null, '', 'x'.repeat(81)]) await assert.rejects(deleteReview(db, id, 1), { status: 400 });
+  await saveReviews(db, [{ ...rows[0], text: 'A newer admin edit.' }]);
+  await assert.rejects(deleteReview(db, rows[0].id, rows[0].version), { status: 409 });
+  assert.equal((await db.prepare('SELECT text FROM reviews WHERE id = ?').get(rows[0].id)).text, 'A newer admin edit.');
+  for (const row of (await listReviews(db, { admin: true })).items) await deleteReview(db, row.id, row.version);
+  assert.deepEqual(await reviewSummary(db), { count: 0, ratedCount: 0, rating: null, homeCount: 0, items: [] });
+  assert.deepEqual((await listReviews(db, { admin: true })).items, []);
 });

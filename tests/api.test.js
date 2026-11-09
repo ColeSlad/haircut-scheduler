@@ -411,6 +411,32 @@ test('admins select homepage reviews and hide or edit public reviews without rep
   assert.equal((await request('/api/reviews')).body.items.length, 0);
   assert.equal((await request('/api/admin/reviews', { headers })).body.items[0].hidden, true);
 });
+test('review deletion requires an admin, same-origin JSON, and the current version', async (t) => {
+  const { db, request, login } = await fixture(t);
+  const headers = { cookie: await login() };
+  const review = { name: 'Delete fixture', text: 'This is an isolated review.', stars: 5, sample: false, showOnHome: true, hidden: false };
+  await request('/api/admin/reviews', { method: 'PATCH', headers, body: { items: [review] } });
+  const row = (await request('/api/admin/reviews', { headers })).body.items[0];
+  const path = `/api/admin/reviews/${row.id}`;
+  const body = { version: row.version };
+  assert.equal((await request(path, { method: 'DELETE', body })).status, 401);
+  assert.equal((await request(path, { method: 'DELETE', headers: { ...headers, origin: 'https://other.example' }, body })).status, 403);
+  assert.equal((await request(path, { method: 'DELETE', headers: { ...headers, 'content-type': 'text/plain' }, body })).status, 415);
+  for (const body of [{}, null, { version: 0 }, { version: '1' }]) assert.equal((await request(path, { method: 'DELETE', headers, body })).status, 400);
+  assert.equal((await request(`/api/reviews/${row.id}`, { method: 'DELETE', body })).status, 404);
+  assert.equal((await request(path, { method: 'DELETE', headers, body: { version: row.version + 1 } })).status, 409);
+  assert.equal((await request('/api/admin/reviews/%ZZ', { method: 'DELETE', headers, body })).status, 400);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM reviews').get()).n, 1);
+  const deleted = await request(path, { method: 'DELETE', headers, body });
+  assert.equal(deleted.status, 200);
+  assert.deepEqual(deleted.body, { ok: true, count: 0, ratedCount: 0, rating: null, homeCount: 0 });
+  assert.equal((await request('/api/public')).body.reviews.items.length, 0);
+  assert.equal((await request('/api/reviews')).body.items.length, 0);
+  assert.equal((await request('/api/admin/reviews', { headers })).body.items.length, 0);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM reviews').get()).n, 0);
+  assert.equal((await request(path, { method: 'DELETE', headers, body })).status, 404);
+});
+
 test('anyone can publish a review without an account, but cannot feature it or expose internal fields', async (t) => {
   const { request } = await fixture(t);
   const body = { name: '<script>Example</script>', text: 'A public review with <b>literal text</b>.', stars: 1, requestId: randomUUID(), sample: true, hidden: true, showOnHome: true };

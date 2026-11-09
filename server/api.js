@@ -7,7 +7,7 @@ import { rateLimit } from './limits.js';
 import { createPayments } from './payments.js';
 import { createStorage } from './storage.js';
 import { createNotifications } from './notifications.js';
-import { listReviews, saveReviews, submitReview } from './reviews.js';
+import { deleteReview, listReviews, saveReviews, submitReview } from './reviews.js';
 
 const categories = ['Short cuts', 'Texture', 'Beards', 'Long cuts'];
 export function createApi(db, { origin, secure, provider, secret, notificationSender, storage = createStorage(db, { callbackOrigin: origin }) }) {
@@ -235,6 +235,13 @@ export function createApi(db, { origin, secure, provider, secret, notificationSe
       if (path === '/api/admin/reviews' && method === 'PATCH') {
         await saveReviews(db, (await readJson(req)).items);
         return json({ ok: true });
+      }
+      if (/^\/api\/admin\/reviews\/[^/]+$/.test(path) && method === 'DELETE') {
+        let id;
+        try { id = decodeURIComponent(path.split('/').at(-1)); }
+        catch { throw new HttpError(400, 'Choose a valid review.'); }
+        const input = await readJson(req);
+        return json({ ok: true, ...await deleteReview(db, id, input?.version) });
       }
       if (/^\/api\/admin\/bookings\/[^/]+$/.test(path) && method === 'PATCH') {
         const { status, paymentStatus } = await readJson(req);
