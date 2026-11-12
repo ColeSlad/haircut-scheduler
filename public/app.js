@@ -3,6 +3,7 @@ import { home, galleryPage } from './pages.js';
 import { mountScheduler, mountConfirmation } from './booking.js';
 import { mountAdmin } from './admin.js';
 import { mountReviews } from './reviews.js';
+import './analytics.js';
 let data;
 let routeId = 0;
 const app = $('#app');

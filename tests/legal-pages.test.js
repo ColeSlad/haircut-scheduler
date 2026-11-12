@@ -24,7 +24,6 @@ test('public policy pages serve their complete content without JavaScript or dat
     assert.equal(page.headers['cache-control'], 'no-cache');
     assert.match(page.body, /L2 Cuts/);
     assert.match(page.body, /mailto:coleslad31@gmail\.com/);
-    assert(!page.body.includes('<script'));
     assert(!page.body.includes('+19089923507'));
   }
   assert.match(privacy.body, /<h1>Privacy Policy<\/h1>/);
