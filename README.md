@@ -14,6 +14,8 @@ An Accepted SMS is still awaiting delivery confirmation. **Refresh status** chec
 
 Public [Privacy Policy](https://www.l2cuts.com/privacy) and [Terms & Conditions](https://www.l2cuts.com/terms) pages identify L2 Cuts and the public support address, coleslad31@gmail.com. They include SMS privacy, recipient consent, variable message frequency, rates, opt-out, and support details for internal barber alerts. Both are standalone HTML pages linked from the site footer and work without JavaScript or database access. Keep their descriptions current if the messaging program changes; booking clients are not enrolled in SMS.
 
+Vercel Web Analytics tracks public page views in Production, including navigation between pages. Admin, private appointment links, API routes, and unknown paths are excluded; reported page URLs omit query strings and fragments. No booking contact details or custom analytics events are sent. Local and Preview builds do not initialize Analytics. View traffic in the project's **Analytics** dashboard after enabling Web Analytics and deploying. The policy pages retain their complete HTML content when JavaScript is disabled.
+
 ## Local setup
 
 Use **Node.js 24**, npm, and PostgreSQL 14 or newer. Production uses Neon Postgres and public Vercel Blob. SQLite is retained only for importing the previous installation.
