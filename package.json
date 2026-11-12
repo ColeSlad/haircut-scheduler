@@ -20,6 +20,7 @@
     "check": "node scripts/check.js"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "@vercel/blob": "^2.8.2",
     "@vercel/functions": "^3.10.3",
     "pg": "^8.23.1",
