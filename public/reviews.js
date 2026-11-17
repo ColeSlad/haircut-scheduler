@@ -13,10 +13,10 @@ export async function mountReviews(data, { refreshData }) {
   let reviews = await api('/api/reviews');
   if (!current()) return;
   let pendingSubmission;
-  root.innerHTML = `<section class="section-shell page-intro reviews-intro"><div><h1>Reviews</h1><p id="all-review-rating">${reviewRating(reviews)}</p></div><a class="button outline" href="#write-review">Write a review</a></section><section class="section-shell reviews-layout"><div class="reviews-feed"><div id="all-reviews"></div><p class="form-error" id="reviews-load-error" role="alert" hidden></p></div><section class="review-submission" id="write-review" aria-labelledby="write-review-heading"><h2 id="write-review-heading">Write a review</h2><form id="public-review-form"><fieldset class="review-fields"><legend class="sr-only">Your review</legend><label>Name (shown publicly)<input name="name" autocomplete="name" required maxlength="80" placeholder="Your name"></label><label>Rating<select name="stars" required><option value="">Choose a rating</option>${[5, 4, 3, 2, 1].map(stars => `<option value="${stars}">${stars} ${stars === 1 ? 'star' : 'stars'}</option>`).join('')}</select></label><label>Your review<textarea name="text" rows="4" required maxlength="600" placeholder="How was your cut?"></textarea></label><label class="honeypot" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label></fieldset><p class="form-error" data-error role="alert" tabindex="-1" hidden></p><p id="review-feedback" role="status" hidden></p><button class="button primary" type="submit">Post review</button></form></section></section>`;
+  root.innerHTML = `<section class="section-shell page-intro reviews-intro"><div><h1>Reviews</h1><p id="all-review-rating">${reviewRating(reviews)}</p></div><a class="button outline" href="#write-review">Write a review</a></section><section class="section-shell reviews-layout"><div class="reviews-feed"><div id="all-reviews"></div><p class="form-error" id="reviews-load-error" role="alert" hidden></p></div><section class="review-submission" id="write-review" aria-labelledby="write-review-heading"><h2 id="write-review-heading">Write a review</h2><p class="fine-print">Reviews appear publicly after approval.</p><form id="public-review-form"><fieldset class="review-fields"><legend class="sr-only">Your review</legend><label>Name (shown publicly)<input name="name" autocomplete="name" required maxlength="80" placeholder="Your name"></label><label>Rating<select name="stars" required><option value="">Choose a rating</option>${[5, 4, 3, 2, 1].map(stars => `<option value="${stars}">${stars} ${stars === 1 ? 'star' : 'stars'}</option>`).join('')}</select></label><label>Your review<textarea name="text" rows="4" required maxlength="600" placeholder="How was your cut?"></textarea></label><label class="honeypot" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label></fieldset><p class="form-error" data-error role="alert" tabindex="-1" hidden></p><p id="review-feedback" role="status" hidden></p><button class="button primary" type="submit">Submit review</button></form></section></section>`;
   function renderRows() {
     $('#all-review-rating', root).textContent = reviewRating(reviews);
-    $('#all-reviews', root).innerHTML = `${reviews.items.length ? reviews.items.map(review => reviewCard(review, { showDate: true })).join('') : '<p class="empty-state">No reviews yet.</p>'}${reviews.nextCursor ? '<button class="button outline" id="load-more-reviews">Load more reviews</button>' : ''}`;
+    $('#all-reviews', root).innerHTML = `${reviews.items.length ? reviews.items.map(review => reviewCard(review, { showDate: true })).join('') : '<p class="empty-state">No public reviews yet.</p>'}${reviews.nextCursor ? '<button class="button outline" id="load-more-reviews">Load more reviews</button>' : ''}`;
     $('#load-more-reviews', root)?.addEventListener('click', async (event) => {
       const restore = loadingButton(event.currentTarget, 'Loading…');
       $('#reviews-load-error', root).hidden = true;
@@ -35,7 +35,7 @@ export async function mountReviews(data, { refreshData }) {
     event.preventDefault();
     const values = new FormData(form);
     const details = { name: values.get('name').trim(), text: values.get('text').trim(), stars: Number(values.get('stars')), website: values.get('website') };
-    const restore = loadingButton($('button[type="submit"]', form), 'Posting…');
+    const restore = loadingButton($('button[type="submit"]', form), 'Submitting…');
     $('fieldset', form).disabled = true;
     $('[data-error]', form).hidden = true;
     $('#review-feedback', form).hidden = true;
@@ -51,13 +51,13 @@ export async function mountReviews(data, { refreshData }) {
       try { sessionStorage.removeItem('l2cuts-review'); } catch { /* Optional browser storage. */ }
       if (!current()) return;
       form.reset();
-      $('#review-feedback', form).textContent = result.published ? 'Your review was added.' : 'Your review was already submitted.';
+      $('#review-feedback', form).textContent = result.published ? 'Your review is already published.' : 'Thanks! Your review was submitted and is awaiting approval.';
       $('#review-feedback', form).hidden = false;
       try {
         const latest = await api('/api/reviews');
         await refreshData();
         if (current()) { reviews = latest; renderRows(); }
-      } catch { if (current()) $('#review-feedback', form).textContent = 'Your review was saved. Refresh the page to update the list.'; }
+      } catch { if (current()) $('#review-feedback', form).textContent = result.published ? 'Your review was saved. Refresh the page to update the list.' : 'Thanks! Your review was submitted and is awaiting approval.'; }
     } catch (error) { if (current()) fieldError(form, error); }
     finally { $('fieldset', form).disabled = false; restore(); }
   });
