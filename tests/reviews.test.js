@@ -22,17 +22,23 @@ test('existing review content migrates once and preserves the first three homepa
   assert.equal(summary.rating, 3.5); assert.equal(summary.count, 4);
 });
 
-test('public reviews publish without accounts, ignore admin flags, and retry idempotently', async (t) => {
+test('public reviews await approval, ignore publication flags, and retry idempotently', async (t) => {
   const db = await testDatabase(t);
-  const review = { ...input(), sample: true, hidden: true, showOnHome: true };
+  const review = { ...input(), sample: true, hidden: false, showOnHome: true };
   const results = await Promise.all([submitReview(db, review), submitReview(db, review)]);
-  assert.deepEqual(results[0], results[1]); assert.equal(results[0].published, true);
+  assert.deepEqual(results[0], results[1]); assert.equal(results[0].published, false);
   const row = await db.prepare('SELECT * FROM reviews').get();
-  assert.equal(row.hidden, false); assert.equal(row.show_on_home, false); assert.equal(row.sample, false);
+  assert.equal(row.hidden, true); assert.equal(row.show_on_home, false); assert.equal(row.sample, false);
   assert.notEqual(row.request_hash, review.requestId);
-  assert.equal((await reviewSummary(db)).items.length, 0);
-  assert.equal((await listReviews(db)).items.length, 1);
+  assert.deepEqual(await reviewSummary(db), { count: 0, ratedCount: 0, rating: null, homeCount: 0, items: [] });
+  assert.equal((await listReviews(db)).items.length, 0);
   await assert.rejects(submitReview(db, { ...review, text: 'Changed details.' }), { status: 409 });
+  const pending = (await listReviews(db, { admin: true })).items[0];
+  await saveReviews(db, [{ ...pending, hidden: false }]);
+  const published = await listReviews(db);
+  assert.equal(published.count, 1); assert.equal(published.ratedCount, 1); assert.equal(published.rating, 5);
+  assert.equal(published.items[0].id, results[0].id);
+  assert.equal((await submitReview(db, review)).published, true);
   assert.equal((await db.prepare('SELECT count(*) AS n FROM reviews').get()).n, 1);
 });
 
@@ -66,6 +72,8 @@ test('admin edits preserve new public submissions and reject stale changes witho
 test('hidden reviews are reversible, placeholders do not affect ratings, and retries do not republish hidden posts', async (t) => {
   const db = await testDatabase(t);
   const posted = input(); const result = await submitReview(db, posted);
+  const pending = (await listReviews(db, { admin: true })).items.find(item => item.id === result.id);
+  await saveReviews(db, [{ ...pending, hidden: false }]);
   await saveReviews(db, [adminReview({ sample: true, showOnHome: true, stars: 1 })]);
   assert.equal((await reviewSummary(db)).rating, 5);
   const row = (await listReviews(db, { admin: true })).items.find(item => item.id === result.id);
@@ -80,10 +88,10 @@ test('hidden reviews are reversible, placeholders do not affect ratings, and ret
 
 test('review pagination is bounded and stable when new reviews arrive between pages', async (t) => {
   const db = await testDatabase(t);
-  for (let i = 0; i < 25; i++) await submitReview(db, { ...input(), name: `Name ${i}` });
+  await saveReviews(db, Array.from({ length: 25 }, (_, i) => adminReview({ name: `Name ${i}` })));
   const first = await listReviews(db);
   assert.equal(first.items.length, 20); assert(first.nextCursor);
-  await submitReview(db, input());
+  await saveReviews(db, [adminReview()]);
   const next = await listReviews(db, { before: first.nextCursor });
   assert.equal(next.items.length, 5); assert.equal(next.nextCursor, null);
   assert(!next.items.some(row => first.items.some(previous => previous.id === row.id)));
@@ -100,13 +108,16 @@ test('hide all covers every page, preserves reviews, and lets admins show select
   assert.deepEqual(await reviewSummary(db), { count: 0, ratedCount: 0, rating: null, homeCount: 0, items: [] });
   assert.deepEqual(await listReviews(db), { count: 0, ratedCount: 0, rating: null, homeCount: 0, items: [], nextCursor: null });
   assert.equal((await db.prepare('SELECT count(*) AS n FROM reviews WHERE hidden AND NOT show_on_home').get()).n, 25);
+  const future = await submitReview(db, input());
+  assert.equal(future.published, false);
+  assert.equal((await listReviews(db)).count, 0);
   await assert.rejects(saveReviews(db, [{ ...original[0], hidden: false }]), { status: 409 });
   const hidden = (await listReviews(db, { admin: true })).items;
   assert(hidden.every(row => row.hidden));
   await saveReviews(db, [], { hideAll: true });
   assert.deepEqual((await listReviews(db, { admin: true })).items, hidden);
 
-  const chosen = hidden[0];
+  const chosen = hidden.find(row => row.name === 'Name 24');
   await saveReviews(db, [{ ...chosen, hidden: false, showOnHome: true }]);
   let summary = await reviewSummary(db);
   assert.equal(summary.count, 1); assert.equal(summary.ratedCount, 1); assert.equal(summary.rating, 1);

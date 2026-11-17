@@ -466,14 +466,22 @@ test('bulk review visibility requires an admin and updates public lists, average
   assert.deepEqual(page.items.map(row => row.id), [selected.id]);
 });
 
-test('anyone can publish a review without an account, but cannot feature it or expose internal fields', async (t) => {
-  const { request } = await fixture(t);
-  const body = { name: '<script>Example</script>', text: 'A public review with <b>literal text</b>.', stars: 1, requestId: randomUUID(), sample: true, hidden: true, showOnHome: true };
+test('guest reviews stay private and do not affect ratings until an admin approves them', async (t) => {
+  const { request, login } = await fixture(t);
+  const body = { name: '<script>Example</script>', text: 'A public review with <b>literal text</b>.', stars: 1, requestId: randomUUID(), sample: true, hidden: false, showOnHome: true };
   const first = await request('/api/reviews', { method: 'POST', body });
-  assert.equal(first.status, 201); assert.equal(first.body.published, true);
+  assert.equal(first.status, 201); assert.equal(first.body.published, false);
   assert.equal((await request('/api/reviews', { method: 'POST', body })).body.id, first.body.id);
+  const pending = (await request('/api/reviews')).body;
+  assert.equal(pending.count, 0); assert.equal(pending.ratedCount, 0); assert.equal(pending.rating, null); assert.deepEqual(pending.items, []);
+  assert(!JSON.stringify((await request('/api/public')).body.reviews).includes(body.text));
+  const headers = { cookie: await login() };
+  const hidden = (await request('/api/admin/reviews', { headers })).body.items[0];
+  assert.equal(hidden.id, first.body.id); assert.equal(hidden.hidden, true); assert.equal(hidden.showOnHome, false);
+  assert.equal((await request('/api/admin/reviews', { method: 'PATCH', headers, body: { items: [{ ...hidden, hidden: false }] } })).status, 200);
   const all = await request('/api/reviews');
   assert.equal(all.status, 200); assert.equal(all.body.items.length, 1); assert.equal(all.body.rating, 1);
+  assert.equal(all.body.count, 1); assert.equal(all.body.ratedCount, 1);
   assert.deepEqual(Object.keys(all.body.items[0]).sort(), ['createdAt', 'id', 'name', 'sample', 'stars', 'text']);
   assert.equal(all.body.items[0].sample, false);
   assert.equal(all.body.items[0].name, body.name);

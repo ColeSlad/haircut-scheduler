@@ -41,8 +41,8 @@ export async function submitReview(db, input, now = Date.now()) {
       return { id: previous.id, published: !previous.hidden };
     }
     const id = randomUUID();
-    await tx.prepare('INSERT INTO reviews (id, name, text, stars, created_at, request_hash, request_fingerprint) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, review.name, review.text, review.stars, now, hash, fingerprint);
-    return { id, published: true };
+    await tx.prepare('INSERT INTO reviews (id, name, text, stars, hidden, created_at, request_hash, request_fingerprint) VALUES (?, ?, ?, ?, TRUE, ?, ?, ?)').run(id, review.name, review.text, review.stars, now, hash, fingerprint);
+    return { id, published: false };
   });
 }
 export async function saveReviews(db, items, { hideAll = false } = {}) {
