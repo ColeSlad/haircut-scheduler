@@ -45,8 +45,9 @@ export async function submitReview(db, input, now = Date.now()) {
     return { id, published: true };
   });
 }
-export async function saveReviews(db, items) {
+export async function saveReviews(db, items, { hideAll = false } = {}) {
   if (!Array.isArray(items) || items.length > 100) throw new HttpError(400, 'Save up to 100 review changes at a time.');
+  if (typeof hideAll !== 'boolean') throw new HttpError(400, 'Choose whether to hide all reviews.');
   const ids = new Set();
   const changes = items.map(item => {
     const review = fields(item);
@@ -67,6 +68,10 @@ export async function saveReviews(db, items) {
         if (!result.changes) throw new HttpError(409, 'A review changed since this page loaded. Refresh the reviews and try again.');
       } else await tx.prepare('INSERT INTO reviews (id, name, text, stars, sample, show_on_home, hidden, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(review.id, ...values, Date.now());
     }
+    // Explicit row choices take precedence, so an admin can hide every page and
+    // show selected reviews in one save. Version bumps protect other open editors.
+    if (hideAll) await tx.prepare(`UPDATE reviews SET hidden = TRUE, show_on_home = FALSE, version = version + 1
+      WHERE NOT hidden AND NOT (id = ANY(?::text[]))`).run([...ids]);
     if ((await tx.prepare('SELECT count(*) AS n FROM reviews WHERE show_on_home AND NOT hidden').get()).n > 3) throw new HttpError(400, 'Choose up to three homepage reviews. Turn off another review first.');
   });
 }

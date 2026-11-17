@@ -91,11 +91,59 @@ test('review pagination is bounded and stable when new reviews arrive between pa
   for (const before of ['bad', 0, -1, 1.5, '9007199254740992']) await assert.rejects(listReviews(db, { before }), { status: 400 });
 });
 
+test('hide all covers every page, preserves reviews, and lets admins show selected reviews again', async (t) => {
+  const db = await testDatabase(t);
+  await saveReviews(db, Array.from({ length: 25 }, (_, index) => adminReview({ name: `Name ${index}`, stars: index === 0 ? 5 : 1, showOnHome: index < 3 })));
+  const original = (await listReviews(db, { admin: true })).items;
+  assert(original.length < 25);
+  await saveReviews(db, [], { hideAll: true });
+  assert.deepEqual(await reviewSummary(db), { count: 0, ratedCount: 0, rating: null, homeCount: 0, items: [] });
+  assert.deepEqual(await listReviews(db), { count: 0, ratedCount: 0, rating: null, homeCount: 0, items: [], nextCursor: null });
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM reviews WHERE hidden AND NOT show_on_home').get()).n, 25);
+  await assert.rejects(saveReviews(db, [{ ...original[0], hidden: false }]), { status: 409 });
+  const hidden = (await listReviews(db, { admin: true })).items;
+  assert(hidden.every(row => row.hidden));
+  await saveReviews(db, [], { hideAll: true });
+  assert.deepEqual((await listReviews(db, { admin: true })).items, hidden);
+
+  const chosen = hidden[0];
+  await saveReviews(db, [{ ...chosen, hidden: false, showOnHome: true }]);
+  let summary = await reviewSummary(db);
+  assert.equal(summary.count, 1); assert.equal(summary.ratedCount, 1); assert.equal(summary.rating, 1);
+  assert.deepEqual(summary.items.map(row => row.id), [chosen.id]);
+  const firstPage = await listReviews(db, { admin: true });
+  const lastPage = await listReviews(db, { admin: true, before: firstPage.nextCursor });
+  const fiveStar = lastPage.items.find(row => row.name === 'Name 0');
+  await saveReviews(db, [{ ...fiveStar, hidden: false }]);
+  summary = await reviewSummary(db);
+  assert.equal(summary.count, 2); assert.equal(summary.ratedCount, 2); assert.equal(summary.rating, 3);
+  assert.equal(summary.homeCount, 1);
+  const shown = await listReviews(db);
+  assert.equal(shown.items.length, 2); assert.equal(shown.count, 2); assert.equal(shown.rating, 3);
+});
+
+test('bulk hiding and explicit visibility choices save atomically without bypassing review versions', async (t) => {
+  const db = await testDatabase(t);
+  await saveReviews(db, Array.from({ length: 25 }, (_, index) => adminReview({ name: `Name ${index}`, showOnHome: index < 3 })));
+  const rows = (await listReviews(db, { admin: true })).items;
+  await saveReviews(db, [{ ...rows[0], text: 'A newer edit.' }]);
+  await assert.rejects(saveReviews(db, [{ ...rows[0], hidden: true }], { hideAll: true }), { status: 409 });
+  assert.equal((await listReviews(db)).count, 25);
+  const fresh = (await listReviews(db, { admin: true })).items;
+  const selected = { ...fresh[0], showOnHome: true };
+  await saveReviews(db, [selected, ...fresh.slice(1).map(row => ({ ...row, hidden: true, showOnHome: false }))], { hideAll: true });
+  const summary = await reviewSummary(db);
+  assert.equal(summary.count, 1); assert.equal(summary.ratedCount, 1); assert.equal(summary.rating, 5);
+  assert.equal(summary.homeCount, 1); assert.equal(summary.items[0].id, selected.id);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM reviews').get()).n, 25);
+});
+
 test('review fields and homepage settings are validated on the server', async (t) => {
   const db = await testDatabase(t);
   for (const changes of [{ name: '' }, { name: 'x'.repeat(81) }, { text: '' }, { text: 'x'.repeat(601) }, { stars: 0 }, { stars: 6 }, { stars: '5' }, { stars: 4.5 }, { requestId: null }, { website: 'spam.example' }]) await assert.rejects(submitReview(db, { ...input(), ...changes }), { status: 400 });
   await assert.rejects(saveReviews(db, [adminReview({ hidden: true, showOnHome: true })]), { status: 400 });
   await assert.rejects(saveReviews(db, [adminReview({ sample: 'false' })]), { status: 400 });
+  for (const hideAll of [null, 0, 1, 'true', 'false']) await assert.rejects(saveReviews(db, [adminReview()], { hideAll }), { status: 400 });
   assert.equal((await db.prepare('SELECT count(*) AS n FROM reviews').get()).n, 0);
 });
 

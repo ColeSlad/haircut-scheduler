@@ -233,7 +233,8 @@ export function createApi(db, { origin, secure, provider, secret, notificationSe
       if (path === '/api/admin/reviews' && method === 'GET') return json(await listReviews(db, { admin: true, before: url.searchParams.get('before') }));
       if (path === '/api/admin/reviews' && method === 'PUT') throw new HttpError(409, 'Refresh the page to use the updated review editor.');
       if (path === '/api/admin/reviews' && method === 'PATCH') {
-        await saveReviews(db, (await readJson(req)).items);
+        const input = await readJson(req);
+        await saveReviews(db, input?.items, { hideAll: input?.hideAll });
         return json({ ok: true });
       }
       if (/^\/api\/admin\/reviews\/[^/]+$/.test(path) && method === 'DELETE') {
